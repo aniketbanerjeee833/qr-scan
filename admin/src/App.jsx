@@ -10,6 +10,7 @@ import Spinner from "./components/Layout/Spinner";
 
 
 
+
 const Login = lazy(() => import("./pages/User/Login/Login"));
 // const UploadPage = lazy(() => import("./pages/UploadPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -18,6 +19,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 
  const LeaveManagement = lazy(() => import("./pages/LeaveManagement"));
  const LocationQRManagement= lazy(() => import("./pages/LocationQRManagement"));
+ const PoliceStationManagement= lazy(() => import("./pages/PoliceStationManagement"));
  const CreateLocationQR= lazy(() => import("./pages/CreateLocationQR"));
  const Database = lazy(() => import("./pages/Database"));
   const UploadPersonnel = lazy(() => import("./pages/Upload"));
@@ -114,6 +116,7 @@ console.log("Browser path:", window.location.pathname);
       <Route path="leave" element={<LeaveManagement />} />
       <Route path="location-qrs" element={<LocationQRManagement />} />
       <Route path="location-qrs/create" element={<CreateLocationQR />} />
+      <Route path="police-stations" element={<PoliceStationManagement/>} />
       <Route path="database" element={<Database />} />
       <Route path="upload" element={<UploadPersonnel />} />
     </Route>

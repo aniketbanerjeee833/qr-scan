@@ -2,6 +2,7 @@
 import express from "express";
 
 import {
+  getAllOfficersByPoliceStation,
   getScannedQRDetails,
   submitOfficerVisit,
 } from "../../controllers/website/officerQR.controller.js";
@@ -21,6 +22,10 @@ router.post(
   "/qr/:qrCode/visit",
  upload.single("image"),
   submitOfficerVisit
+);
+router.get(
+  "/qr/:qrCode/officers",
+  getAllOfficersByPoliceStation 
 );
 
 export default router;

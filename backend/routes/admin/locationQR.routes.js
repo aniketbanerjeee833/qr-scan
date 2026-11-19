@@ -11,14 +11,15 @@ import {
 const router = express.Router();
 import userAuth from "../../middleware/userAuth.js";
 import adminAuth from "../../middleware/adminAuth.js";
+router.use(userAuth, adminAuth);
 // Admin routes
-router.post("/",userAuth,adminAuth, createLocationQR);
+router.post("/", createLocationQR);
 
-router.get("/",userAuth,adminAuth, getAllLocationQRs);
+router.get("/", getAllLocationQRs);
 // Edit location details
-router.put("/:id",userAuth,adminAuth, updateLocationQR);
+router.put("/:id", updateLocationQR);
 
 // Generate a completely new QR token and image
-router.post("/:id/regenerate",userAuth,adminAuth, regenerateLocationQR);
+router.post("/:id/regenerate", regenerateLocationQR);
 
 export default router;

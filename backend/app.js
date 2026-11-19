@@ -6,11 +6,12 @@
   
 
 
- import uploadRoutes from "./routes/admin/uploadRoutes.js"
-import personnelRoutes from "./routes/admin/personnelRoutes.js"
+
 import dashboardRoutes from "./routes/admin/dashboardRoutes.js"
 import locationQRRoutes from "./routes/admin/locationQR.routes.js"
 import officerQrRoutes from "./routes/website/officerQR.routes.js"
+import officerVisitRoutes from "./routes/admin/officerVisit.routes.js"
+import policeStationRoutes from "./routes/admin/policeStation.routes.js"
 
 import express from "express";
 
@@ -111,36 +112,64 @@ app.use(cookieParser());
 //   methods: ['GET', 'POST',"PUT","DELETE","PATCH",'OPTIONS'],  // your React app port
 //   credentials: true                // allow cookies
 // }));
+// const allowedOrigins = [
+//     "http://localhost:5173",
+//     "http://localhost:5174",
+//     "http://127.0.0.1:5173",
+//     "http://127.0.0.1:5174",
+//     "http://192.168.0.114:5173",
+//      "http://192.168.29.2:5173",
+//       "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app"
+// ];
+
+// app.use(cors({
+//     origin: function (origin, callback) {
+//         // Allow Postman, curl and requests without an Origin header.
+//         if (!origin) {
+//             return callback(null, true);
+//         }
+
+//         if (allowedOrigins.includes(origin)) {
+//             return callback(null, true);
+//         }
+
+//         console.log("Blocked CORS Origin:", origin);
+
+//         return callback(new Error(`Not allowed by CORS: ${origin}`));
+//     },
+
+//     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+
+//     credentials: true,
+// }));
+
+
 const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "http://192.168.0.114:5173",
-     "http://192.168.0.103:5173"
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://192.168.0.114:5173",
+  "http://192.168.29.2:5173",
+
+  // Frontend ngrok URL
+  "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app",
 ];
 
 app.use(cors({
-    origin: function (origin, callback) {
-        // Allow Postman, curl and requests without an Origin header.
-        if (!origin) {
-            return callback(null, true);
-        }
+  origin: function (origin, callback) {
+    console.log("Incoming frontend origin:", origin);
 
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-        console.log("Blocked CORS Origin:", origin);
-
-        return callback(new Error(`Not allowed by CORS: ${origin}`));
-    },
-
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-
-    credentials: true,
+    console.log("Blocked CORS Origin:", origin);
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  credentials: true,
 }));
-
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -158,15 +187,15 @@ const __dirname = path.dirname(__filename);
 
 
  
-app.use("/api/admin/upload", uploadRoutes);
-
-app.use("/api/admin/personnel", personnelRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 
 
 
 app.use("/api/admin/location-qrs", locationQRRoutes);
+app.use("/api/admin/officer-visit", officerVisitRoutes);
 app.use("/api/officer", officerQrRoutes);
+
+app.use("/api/admin/police-stations", policeStationRoutes);
 //clearExpiredSessions();
 //app.use(errorHandler)
 const PORT = process.env.PORT || 4000;
@@ -174,14 +203,21 @@ const PORT = process.env.PORT || 4000;
 // clearExpiredLoginAttempts();
 // dailyStockCarryForward();
 //  clearExpiredQr()
-app.listen(PORT, (err) => {
+app.listen(PORT, "0.0.0.0", (err) => {
   if (err) {
-    //logger.error(`❌ Failed to start server on port ${PORT}`, err);
     process.exit(1);
-  } else {
-    console.log(`Server running on port ${PORT}`); // optional plain console
   }
+
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+// app.listen(PORT, (err) => {
+//   if (err) {
+//     //logger.error(`❌ Failed to start server on port ${PORT}`, err);
+//     process.exit(1);
+//   } else {
+//     console.log(`Server running on port ${PORT}`); // optional plain console
+//   }
+// });
 
 
 

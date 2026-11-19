@@ -10,7 +10,9 @@ import {
 
 import getError from "../../utils/getError.js";
 
-const CLIENT_URL = "http://192.168.0.103:5173";
+//const CLIENT_URL = "http://192.168.29.2:5173";
+const CLIENT_URL =
+  "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app";
 
 // Temporary default police station
 // Later, this will come from the authenticated user.
@@ -147,27 +149,29 @@ export const createLocationQR = async (req, res) => {
       savedQRs.push(savedQR);
 
       // Insert QR with police station relationship
-      const [result] = await connection.query(
-        `INSERT INTO location_qrs
-        (
-          police_station_id,
-          location_name,
-          qr_code,
-          latitude,
-          longitude,
-          qr_image,
-          is_active
-        )
-        VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        [
-          policeStationId,
-          cleanLocationName,
-          qrCode,
-          lat,
-          lng,
-          savedQR.filePath,
-        ]
-      );
+     const [result] = await connection.query(
+  `INSERT INTO location_qrs
+  (
+    police_station_id,
+    location_name,
+    qr_code,
+    qr_url,
+    latitude,
+    longitude,
+    qr_image,
+    is_active
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+  [
+    policeStationId,
+    cleanLocationName,
+    qrCode,
+    savedQR.scanUrl,
+    lat,
+    lng,
+    savedQR.filePath,
+  ]
+);
 
       createdLocations.push({
         id: result.insertId,
@@ -282,6 +286,7 @@ export const getAllLocationQRs = async (req, res) => {
           q.location_name,
           q.qr_code,
           q.qr_image,
+          q.qr_url,
           q.latitude,
           q.longitude,
           q.is_active,
@@ -465,6 +470,7 @@ export const updateLocationQR = async (req, res) => {
           q.location_name,
           q.qr_code,
           q.qr_image,
+          q.qr_url,
           q.latitude,
           q.longitude,
           q.is_active,
@@ -552,16 +558,18 @@ export const regenerateLocationQR = async (req, res) => {
     // Update QR token and image.
     // police_station_id remains unchanged.
     await connection.query(
-      `UPDATE location_qrs
-       SET qr_code = ?,
-           qr_image = ?
-       WHERE id = ?`,
-      [
-        newToken,
-        newQR.filePath,
-        id,
-      ]
-    );
+  `UPDATE location_qrs
+   SET qr_code = ?,
+       qr_url = ?,
+       qr_image = ?
+   WHERE id = ?`,
+  [
+    newToken,
+    newQR.scanUrl,
+    newQR.filePath,
+    id,
+  ]
+);
 
     await connection.commit();
 

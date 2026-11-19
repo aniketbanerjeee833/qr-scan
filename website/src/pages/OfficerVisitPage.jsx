@@ -1,489 +1,4 @@
 
-// import { useEffect, useState } from "react";
-// import { useParams } from "react-router-dom";
-// import {
-//   MapPin,
-//   Camera,
-//   CheckCircle,
-//   AlertCircle,
-//   Loader2,
-// } from "lucide-react";
-// import { toast } from "react-toastify";
-
-// const API_URL = "http://192.168.0.103:4000/api/";
-
-// // Maximum permitted distance from QR location
-// const MAX_DISTANCE = 50;
-
-// // Calculate distance between two GPS coordinates in metres
-// const calculateDistance = (lat1, lon1, lat2, lon2) => {
-//   const toRadians = (degree) => (degree * Math.PI) / 180;
-
-//   const earthRadius = 6371000;
-
-//   const dLat = toRadians(lat2 - lat1);
-//   const dLon = toRadians(lon2 - lon1);
-
-//   const a =
-//     Math.sin(dLat / 2) ** 2 +
-//     Math.cos(toRadians(lat1)) *
-//       Math.cos(toRadians(lat2)) *
-//       Math.sin(dLon / 2) ** 2;
-
-//   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-//   return earthRadius * c;
-// };
-
-// const OfficerVisitPage = () => {
-//   const { qrCode } = useParams();
-
-//   const [qrDetails, setQrDetails] = useState(null);
-//   const [loading, setLoading] = useState(true);
-
-//   const [location, setLocation] = useState(null);
-//   const [distance, setDistance] = useState(null);
-//   const [locationLoading, setLocationLoading] = useState(false);
-
-//   const [selfie, setSelfie] = useState(null);
-//   const [preview, setPreview] = useState(null);
-
-//   const [submitting, setSubmitting] = useState(false);
-//   const [submitted, setSubmitted] = useState(false);
-
-//   // Fetch QR details
-//   useEffect(() => {
-//     const fetchQRDetails = async () => {
-//       try {
-//         setLoading(true);
-
-//         const response = await fetch(
-//           `${API_URL}officer/qr/${encodeURIComponent(qrCode)}`
-//         );
-
-//         const result = await response.json();
-
-//         if (!response.ok) {
-//           throw new Error(result.message || "Failed to fetch QR details");
-//         }
-
-//         setQrDetails(result.data);
-//       } catch (error) {
-//         toast.error(error.message || "Unable to load QR details");
-//       } finally {
-//         setLoading(false);
-//       }
-//     };
-
-//     if (qrCode) {
-//       fetchQRDetails();
-//     }
-//   }, [qrCode]);
-
-//   // Check officer's current location
-//   const checkLocation = () => {
-//     if (!navigator.geolocation) {
-//       toast.error("GPS is not supported by this browser");
-//       return;
-//     }
-
-//     setLocationLoading(true);
-//     setLocation(null);
-//     setDistance(null);
-
-//     navigator.geolocation.getCurrentPosition(
-//       (position) => {
-//         const currentLatitude = position.coords.latitude;
-//         const currentLongitude = position.coords.longitude;
-//         const accuracy = position.coords.accuracy;
-
-//         const qrLatitude = Number(qrDetails.qr_location.latitude);
-//         const qrLongitude = Number(qrDetails.qr_location.longitude);
-
-//         if (
-//           !Number.isFinite(qrLatitude) ||
-//           !Number.isFinite(qrLongitude)
-//         ) {
-//           toast.error("QR location coordinates are not configured");
-//           setLocationLoading(false);
-//           return;
-//         }
-
-//         const calculatedDistance = calculateDistance(
-//           currentLatitude,
-//           currentLongitude,
-//           qrLatitude,
-//           qrLongitude
-//         );
-
-//         setLocation({
-//           latitude: currentLatitude,
-//           longitude: currentLongitude,
-//           accuracy,
-//         });
-
-//         setDistance(calculatedDistance);
-
-//         if (accuracy > 50) {
-//           toast.warning(
-//             `GPS accuracy is approximately ${Math.round(accuracy)} metres. Try again outdoors.`
-//           );
-//         } else if (calculatedDistance <= MAX_DISTANCE) {
-//           toast.success("You are within the permitted 50 metre range");
-//         } else {
-//           toast.error(
-//             `You are ${Math.round(calculatedDistance)} metres away. Move closer to the QR location.`
-//           );
-//         }
-
-//         setLocationLoading(false);
-//       },
-//       (error) => {
-//         let message = "Unable to get your location";
-
-//         if (error.code === 1) {
-//           message = "Please allow location permission in your browser";
-//         } else if (error.code === 2) {
-//           message = "Your current location is unavailable";
-//         } else if (error.code === 3) {
-//           message = "Location request timed out. Please try again";
-//         }
-
-//         toast.error(message);
-//         setLocationLoading(false);
-//       },
-//       {
-//         enableHighAccuracy: true,
-//         timeout: 20000,
-//         maximumAge: 0,
-//       }
-//     );
-//   };
-
-//   // Handle selfie selection / camera capture
-//   const handleSelfieChange = (event) => {
-//     const file = event.target.files?.[0];
-
-//     if (!file) return;
-
-//     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-//       toast.error("Only JPG, PNG and WEBP images are allowed");
-//       event.target.value = "";
-//       return;
-//     }
-
-//     if (file.size > 10 * 1024 * 1024) {
-//       toast.error("Image must be smaller than 10 MB");
-//       event.target.value = "";
-//       return;
-//     }
-
-//     setSelfie(file);
-
-//     const imagePreview = URL.createObjectURL(file);
-//     setPreview(imagePreview);
-//   };
-
-//   // Submit officer visit
-//   const handleSubmit = async (event) => {
-//     event.preventDefault();
-
-//     if (!location || distance === null) {
-//       toast.error("Please verify your location first");
-//       return;
-//     }
-
-//     if (location.accuracy > 50) {
-//       toast.error("GPS accuracy is too low. Please check your location again");
-//       return;
-//     }
-
-//     if (distance > MAX_DISTANCE) {
-//       toast.error("You must be within 50 metres of the QR location");
-//       return;
-//     }
-
-//     if (!selfie) {
-//       toast.error("Please capture your selfie");
-//       return;
-//     }
-
-//     try {
-//       setSubmitting(true);
-
-//       const formData = new FormData();
-
-//       formData.append("selfie", selfie);
-//       formData.append("latitude", location.latitude);
-//       formData.append("longitude", location.longitude);
-
-//       const response = await fetch(
-//         `${API_URL}officer/qr/${encodeURIComponent(qrCode)}/visit`,
-//         {
-//           method: "POST",
-//           body: formData,
-//         }
-//       );
-
-//       const result = await response.json();
-
-//       if (!response.ok) {
-//         throw new Error(result.message || "Failed to submit visit");
-//       }
-
-//       setSubmitted(true);
-//       toast.success("Your visit has been submitted successfully!");
-//     } catch (error) {
-//       toast.error(error.message || "Failed to submit visit");
-//     } finally {
-//       setSubmitting(false);
-//     }
-//   };
-
-//   // Loading state
-//   if (loading) {
-//     return (
-//       <div className="flex min-h-screen items-center justify-center">
-//         <Loader2 className="animate-spin" size={32} />
-//         <span className="ml-3">Loading QR details...</span>
-//       </div>
-//     );
-//   }
-
-//   if (!qrDetails) {
-//     return (
-//       <div className="flex min-h-screen items-center justify-center p-5">
-//         <div className="rounded-xl bg-white p-6 text-center shadow">
-//           <AlertCircle className="mx-auto mb-3 text-red-500" size={40} />
-//           <h2 className="text-xl font-bold">Invalid QR code</h2>
-//           <p className="mt-2 text-gray-500">
-//             Unable to load this QR location. Please contact your administrator.
-//           </p>
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   if (submitted) {
-//     return (
-//       <div className="flex min-h-screen items-center justify-center bg-gray-100 p-5">
-//         <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-lg">
-//           <CheckCircle className="mx-auto mb-4 text-green-500" size={64} />
-
-//           <h2 className="text-2xl font-bold text-gray-800">
-//             Visit Submitted!
-//           </h2>
-
-//           <p className="mt-3 text-gray-600">
-//             Your visit has been successfully recorded.
-//           </p>
-
-//           <p className="mt-4 text-sm text-gray-500">
-//             {qrDetails.police_station.station_name}
-//           </p>
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   const isWithinRange =
-//     distance !== null &&
-//     distance <= MAX_DISTANCE &&
-//     location?.accuracy <= 50;
-
-//   return (
-//     <div className="min-h-screen bg-gray-100 px-4 py-8">
-//       <div className="mx-auto max-w-lg space-y-5">
-
-//         {/* Header */}
-//         <div className="rounded-2xl bg-blue-700 p-6 text-white shadow-lg">
-//           <h1 className="text-2xl font-bold">
-//             Officer Visit Verification
-//           </h1>
-
-//           <p className="mt-2 text-sm text-blue-100">
-//             Scan verification and submit your visit
-//           </p>
-//         </div>
-
-//         {/* QR Details */}
-//         <div className="rounded-2xl bg-white p-5 shadow">
-//           <h2 className="mb-4 text-lg font-bold text-gray-800">
-//             QR Location Details
-//           </h2>
-
-//           <div className="space-y-3 text-sm">
-//             <div>
-//               <p className="text-gray-500">Location</p>
-//               <p className="font-semibold text-gray-800">
-//                 {qrDetails.location_name}
-//               </p>
-//             </div>
-
-//             <div>
-//               <p className="text-gray-500">Police Station</p>
-//               <p className="font-semibold text-gray-800">
-//                 {qrDetails.police_station.station_name}
-//               </p>
-//             </div>
-
-//             <div>
-//               <p className="text-gray-500">District</p>
-//               <p className="font-semibold text-gray-800">
-//                 {qrDetails.police_station.district}
-//               </p>
-//             </div>
-//           </div>
-//         </div>
-
-//         {/* GPS Verification */}
-//         <div className="rounded-2xl bg-white p-5 shadow">
-//           <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
-//             <MapPin className="text-blue-600" />
-//             Location Verification
-//           </h2>
-
-//           <p className="mb-4 text-sm text-gray-500">
-//             You must be within 50 metres of the QR location to submit your visit.
-//           </p>
-
-//           <button
-//             type="button"
-//             onClick={checkLocation}
-//             disabled={locationLoading}
-//             className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-//           >
-//             {locationLoading ? (
-//               <>
-//                 <Loader2 className="animate-spin" size={20} />
-//                 Checking location...
-//               </>
-//             ) : (
-//               <>
-//                 <MapPin size={20} />
-//                 Check My Location
-//               </>
-//             )}
-//           </button>
-
-//           {distance !== null && location && (
-//             <div
-//               className={`mt-4 rounded-lg p-4 ${
-//                 isWithinRange
-//                   ? "bg-green-50 text-green-700"
-//                   : "bg-red-50 text-red-700"
-//               }`}
-//             >
-//               <div className="flex items-center gap-2 font-bold">
-//                 {isWithinRange ? (
-//                   <CheckCircle size={20} />
-//                 ) : (
-//                   <AlertCircle size={20} />
-//                 )}
-
-//                 {isWithinRange
-//                   ? "Location Verified"
-//                   : "Location Not Verified"}
-//               </div>
-
-//               <p className="mt-2 text-sm">
-//                 Distance: {Math.round(distance)} metres
-//               </p>
-
-//               <p className="mt-1 text-sm">
-//                 GPS accuracy: ±{Math.round(location.accuracy)} metres
-//               </p>
-
-//               <p className="mt-1 text-sm">
-//                 Allowed distance: 50 metres
-//               </p>
-//             </div>
-//           )}
-//         </div>
-
-//         {/* Selfie Upload and Submit */}
-//         <form
-//           onSubmit={handleSubmit}
-//           className="space-y-4 rounded-2xl bg-white p-5 shadow"
-//         >
-//           <h2 className="flex items-center gap-2 text-lg font-bold">
-//             <Camera className="text-blue-600" />
-//             Capture Officer Selfie
-//           </h2>
-
-//           <p className="text-sm text-gray-500">
-//             Capture your photograph using your phone camera.
-//           </p>
-
-//           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-6 hover:border-blue-500">
-//             <Camera size={35} className="mb-2 text-blue-600" />
-
-//             <span className="font-semibold text-gray-700">
-//               Open Camera
-//             </span>
-
-//             <span className="mt-1 text-xs text-gray-500">
-//               JPG, PNG or WEBP (Max 10 MB)
-//             </span>
-
-//             <input
-//               type="file"
-//               accept="image/jpeg,image/png,image/webp"
-//               capture="user"
-//               onChange={handleSelfieChange}
-//               className="hidden"
-//             />
-//           </label>
-
-//           {preview && (
-//             <div className="text-center">
-//               <img
-//                 src={preview}
-//                 alt="Officer selfie preview"
-//                 className="mx-auto max-h-64 rounded-xl object-cover"
-//               />
-
-//               <p className="mt-2 text-sm text-green-600">
-//                 Selfie selected successfully
-//               </p>
-//             </div>
-//           )}
-
-//           <button
-//             type="submit"
-//             disabled={!isWithinRange || !selfie || submitting}
-//             className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-//           >
-//             {submitting ? (
-//               <>
-//                 <Loader2 className="animate-spin" size={20} />
-//                 Submitting...
-//               </>
-//             ) : (
-//               <>
-//                 <CheckCircle size={20} />
-//                 Submit Visit
-//               </>
-//             )}
-//           </button>
-
-//           {!isWithinRange && (
-//             <p className="text-center text-xs text-red-500">
-//               Verify your GPS location within 50 metres before submitting.
-//             </p>
-//           )}
-//         </form>
-
-//         <p className="pb-4 text-center text-xs text-gray-400">
-//           Police Station Visit Verification System
-//         </p>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default OfficerVisitPage;
-
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -493,18 +8,19 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  User,
 } from "lucide-react";
 import { toast } from "react-toastify";
 
+// const API_URL = "http://192.168.29.2:4000/api/";
 const API_URL =
-  import.meta.env.VITE_API_URL || "http://192.168.0.103:4000/api/";
+  "https://108f-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app/api/";
 
-const MAX_DISTANCE = 50;
-const MAX_ACCURACY = 50;
+const MAX_DISTANCE = 500;
+const MAX_ACCURACY = 500;
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const toRadians = (degree) => (degree * Math.PI) / 180;
-
   const earthRadius = 6371000;
 
   const dLat = toRadians(lat2 - lat1);
@@ -535,7 +51,11 @@ const OfficerVisitPage = () => {
     "Waiting for automatic GPS verification..."
   );
 
-  const [selfie, setSelfie] = useState(null);
+  const [officers, setOfficers] = useState([]);
+  const [selectedOfficerId, setSelectedOfficerId] = useState("");
+  const [officersLoading, setOfficersLoading] = useState(false);
+
+  const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -644,7 +164,7 @@ const OfficerVisitPage = () => {
             setLocationMessage(
               `You are ${Math.round(
                 calculatedDistance
-              )} metres away. You must be within 50 metres.`
+              )} metres away. You must be within 500 metres.`
             );
           }
         }
@@ -661,8 +181,7 @@ const OfficerVisitPage = () => {
           message =
             "Your current location is unavailable. Check your phone GPS.";
         } else if (error.code === 3) {
-          message =
-            "GPS request timed out. Please try again.";
+          message = "GPS request timed out. Please try again.";
         }
 
         setLocation(null);
@@ -688,7 +207,13 @@ const OfficerVisitPage = () => {
         setLoading(true);
 
         const response = await fetch(
-          `${API_URL}officer/qr/${encodeURIComponent(qrCode)}`
+          `${API_URL}officer/qr/${encodeURIComponent(qrCode)}`,
+          {
+            method: "GET",
+            headers: {
+              "ngrok-skip-browser-warning": "true",
+            },
+          }
         );
 
         const result = await response.json();
@@ -705,6 +230,7 @@ const OfficerVisitPage = () => {
       } catch (error) {
         if (!cancelled) {
           toast.error(error.message || "Unable to load QR details");
+          setQrDetails(null);
         }
       } finally {
         if (!cancelled) {
@@ -729,6 +255,64 @@ const OfficerVisitPage = () => {
     }
   }, [qrDetails, checkLocation]);
 
+  // Fetch officers assigned to the scanned QR's police station
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchOfficers = async () => {
+      try {
+        setOfficersLoading(true);
+        setOfficers([]);
+        setSelectedOfficerId("");
+
+        const response = await fetch(
+          `${API_URL}officer/qr/${encodeURIComponent(qrCode)}/officers`,
+          {
+            method: "GET",
+            headers: {
+              "ngrok-skip-browser-warning": "true",
+            },
+          }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result.message || "Failed to fetch officers"
+          );
+        }
+
+        if (!cancelled) {
+          setOfficers(result.data || []);
+
+          if (!result.data?.length) {
+            toast.error(
+              "No officers are assigned to this police station."
+            );
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setOfficers([]);
+          toast.error(error.message || "Unable to fetch officers");
+        }
+      } finally {
+        if (!cancelled) {
+          setOfficersLoading(false);
+        }
+      }
+    };
+
+    if (qrCode && qrDetails) {
+      fetchOfficers();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qrCode, qrDetails]);
+
   // Selfie selection
   const handleSelfieChange = (event) => {
     const file = event.target.files?.[0];
@@ -743,13 +327,13 @@ const OfficerVisitPage = () => {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be smaller than 10 MB");
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("Image must be smaller than 20 MB");
       event.target.value = "";
       return;
     }
 
-    setSelfie(file);
+    setImage(file);
     setPreview(URL.createObjectURL(file));
   };
 
@@ -757,13 +341,18 @@ const OfficerVisitPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
+    if (!selectedOfficerId) {
+      toast.error("Please select your name");
+      return;
+    }
+
     if (locationStatus !== "VERIFIED" || !location) {
       toast.error("Your location must be verified before submission.");
       return;
     }
 
-    if (!selfie) {
-      toast.error("Please capture your selfie.");
+    if (!image) {
+      toast.error("Please capture your image.");
       return;
     }
 
@@ -772,7 +361,8 @@ const OfficerVisitPage = () => {
 
       const formData = new FormData();
 
-      formData.append("selfie", selfie);
+      formData.append("officer_id", selectedOfficerId);
+      formData.append("image", image);
       formData.append("latitude", location.latitude);
       formData.append("longitude", location.longitude);
       formData.append("gps_status", "VERIFIED");
@@ -781,6 +371,9 @@ const OfficerVisitPage = () => {
         `${API_URL}officer/qr/${encodeURIComponent(qrCode)}/visit`,
         {
           method: "POST",
+          headers: {
+            "ngrok-skip-browser-warning": "true",
+          },
           body: formData,
         }
       );
@@ -843,7 +436,15 @@ const OfficerVisitPage = () => {
           </p>
 
           <p className="mt-4 text-sm text-gray-500">
-            {qrDetails.police_station.station_name}
+            Officer:{" "}
+            {officers.find(
+              (officer) =>
+                String(officer.id) === String(selectedOfficerId)
+            )?.name}
+          </p>
+
+          <p className="mt-2 text-sm text-gray-500">
+            {qrDetails.police_station?.station_name}
           </p>
         </div>
       </div>
@@ -861,10 +462,6 @@ const OfficerVisitPage = () => {
           <h1 className="text-2xl font-bold">
             Officer Visit Verification
           </h1>
-
-          {/* <p className="mt-2 text-sm text-blue-100">
-            Automatic location verification and selfie submission
-          </p> */}
         </div>
 
         {/* QR Details */}
@@ -888,12 +485,12 @@ const OfficerVisitPage = () => {
               </p>
             </div>
 
-            <div>
+            {/* <div>
               <p className="text-gray-500">District</p>
               <p className="font-semibold text-gray-800">
-                {qrDetails.police_station?.district}
+                {qrDetails.police_station?.district || "N/A"}
               </p>
-            </div>
+            </div> */}
           </div>
         </div>
 
@@ -906,7 +503,7 @@ const OfficerVisitPage = () => {
 
           <p className="mb-4 text-sm text-gray-500">
             Your GPS location is checked automatically. You must be
-            within 50 metres of this QR location.
+            within 500 metres of this QR location.
           </p>
 
           <div
@@ -945,18 +542,18 @@ const OfficerVisitPage = () => {
                   Distance: {Math.round(distance)} metres
                 </p>
 
-                <p className="mt-1 text-sm">
+                {/* <p className="mt-1 text-sm">
                   GPS accuracy: ±{Math.round(location.accuracy)} metres
-                </p>
+                </p> */}
               </>
             )}
 
             <p className="mt-1 text-sm">
-              Allowed distance: 50 metres
+              Allowed distance: 500 metres
             </p>
           </div>
 
-          {/* Retry only if automatic GPS fails */}
+          {/* Retry GPS */}
           {!isWithinRange && !locationLoading && (
             <button
               type="button"
@@ -969,20 +566,63 @@ const OfficerVisitPage = () => {
           )}
         </div>
 
-        {/* Selfie and Submit */}
+        {/* Officer Selection, Selfie and Submit */}
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl bg-white p-5 shadow"
         >
           <h2 className="flex items-center gap-2 text-lg font-bold">
             <Camera className="text-blue-600" />
-            Capture Officer Selfie
+            Officer Visit Submission
           </h2>
 
+          {/* Officer Dropdown */}
+          <div>
+            <label
+              htmlFor="officer"
+              className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700"
+            >
+              <User size={17} className="text-blue-600" />
+              Select Your Name
+            </label>
+
+            <select
+              id="officer"
+              value={selectedOfficerId}
+              onChange={(e) => setSelectedOfficerId(e.target.value)}
+              disabled={officersLoading || officers.length === 0}
+              required
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
+            >
+              <option value="">
+                {officersLoading
+                  ? "Loading officers..."
+                  : officers.length === 0
+                    ? "No officers found"
+                    : "Select your name"}
+              </option>
+
+              {officers.map((officer) => (
+                <option key={officer.id} value={officer.id}>
+                  {officer.name}
+                </option>
+              ))}
+            </select>
+
+            {!officersLoading && officers.length === 0 && (
+              <p className="mt-2 text-xs text-red-500">
+                No officers are assigned to this police station.
+                Contact the administrator.
+              </p>
+            )}
+          </div>
+
+          {/* Camera Instructions */}
           <p className="text-sm text-gray-500">
             Capture your photograph using your phone camera.
           </p>
 
+          {/* Camera Input */}
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-6 hover:border-blue-500">
             <Camera size={35} className="mb-2 text-blue-600" />
 
@@ -991,7 +631,7 @@ const OfficerVisitPage = () => {
             </span>
 
             <span className="mt-1 text-xs text-gray-500">
-              JPG, PNG or WEBP (Max 10 MB)
+              JPG, PNG or WEBP (Max 20 MB)
             </span>
 
             <input
@@ -1003,23 +643,31 @@ const OfficerVisitPage = () => {
             />
           </label>
 
+          {/* Image Preview */}
           {preview && (
             <div className="text-center">
               <img
                 src={preview}
-                alt="Officer selfie preview"
+                alt="Officer image preview"
                 className="mx-auto max-h-64 rounded-xl object-cover"
               />
 
               <p className="mt-2 text-sm text-green-600">
-                Selfie selected successfully
+                Image selected successfully
               </p>
             </div>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
-            disabled={!isWithinRange || !selfie || submitting}
+            disabled={
+              !isWithinRange ||
+              !image ||
+              !selectedOfficerId ||
+              submitting ||
+              officersLoading
+            }
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
           >
             {submitting ? (

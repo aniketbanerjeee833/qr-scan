@@ -43,9 +43,9 @@ export default function Header({ setMobileOpen }) {
         </div>
 
         {/* Centre: Training name */}
-        <h1 className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-lg font-bold text-black sm:text-xl">
+        {/* <h1 className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-lg font-bold text-black sm:text-xl">
           TRAINING
-        </h1>
+        </h1> */}
 
         {/* Right: Admin profile and logout */}
         <div className="flex items-center gap-1 sm:gap-2">

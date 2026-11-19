@@ -108,21 +108,24 @@ const handleSubmit = async (e) => {
       toast.error(`Coordinates are required in row ${i + 1}.`);
       return;
     }
+const lat = Number(location.latitude);
+const lng = Number(location.longitude);
 
-    const lat = Number(location.latitude);
-    const lng = Number(location.longitude);
+// Validate latitude
+if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+  toast.error(
+    `Invalid latitude in row ${i + 1}. Latitude must be between -90 and 90.`
+  );
+  return;
+}
 
-    if (
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lng) ||
-      lat < -90 ||
-      lat > 90 ||
-      lng < -180 ||
-      lng > 180
-    ) {
-      toast.error(`Invalid coordinates in row ${i + 1}.`);
-      return;
-    }
+// Validate longitude
+if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+  toast.error(
+    `Invalid longitude in row ${i + 1}. Longitude must be between -180 and 180.`
+  );
+  return;
+}
   }
 
   const payload = {
@@ -136,7 +139,7 @@ const handleSubmit = async (e) => {
   try {
     await createLocationQR(payload).unwrap();
 
-    toast.success("Location QR codes created successfully!");
+    toast.success("QR codes created successfully!");
 
     navigate("/location-qrs", { replace: true });
 
@@ -174,7 +177,7 @@ const handleSubmit = async (e) => {
 
         <div>
           <h1 className="text-xl font-bold text-gray-800">
-            Create Location QRs
+            Create QRs
           </h1>
           <p className="mt-1 text-xs text-gray-500">
             Add one or multiple locations and generate their QR codes.

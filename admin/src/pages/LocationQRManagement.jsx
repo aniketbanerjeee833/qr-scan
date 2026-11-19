@@ -1,6 +1,5 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 
 import {
@@ -26,7 +25,7 @@ import {
 
 const PAGE_SIZE = 10;
 
-const API_ORIGIN = "http://192.168.0.103:4000";
+const API_ORIGIN = "http://192.168.29.2:4000";
 
 const getImageUrl = (imagePath) => {
   if (!imagePath) return "";
@@ -52,13 +51,20 @@ export default function LocationQRManagement() {
   // ============================================
 
   const [qrRecords, setQrRecords] = useState([]);
-  const [search, setSearch] = useState("");
+
   const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Starts as true so the spinner shows from the very first paint
+  // (prevents the empty-state flash / UI bump on page entry).
+  const [loadingMore, setLoadingMore] = useState(true);
 
   const [selectedQR, setSelectedQR] = useState(null);
   const [editingQR, setEditingQR] = useState(null);
+const [searchParams, setSearchParams] = useSearchParams();
 
+const [search, setSearch] = useState(
+  () => searchParams.get("search") || ""
+);
   // ============================================
   // EDIT FORM
   // ============================================
@@ -163,9 +169,13 @@ export default function LocationQRManagement() {
   // ============================================
 
   useEffect(() => {
+    // No debounce when the search box is empty (page entry / cleared search),
+    // so the first fetch starts immediately. Typing is still debounced.
+    const delay = search.trim() ? 300 : 0;
+
     const timer = setTimeout(() => {
       loadQRPage(true, search);
-    }, 300);
+    }, delay);
 
     return () => {
       clearTimeout(timer);
@@ -327,45 +337,45 @@ export default function LocationQRManagement() {
   // DOWNLOAD QR
   // ============================================
 
-const handleDownloadQR = async (item) => {
-  if (!item.qr_image) {
-    toast.error("QR image is not available.");
-    return;
-  }
-
-  let blobUrl;
-
-  try {
-    const response = await fetch(getImageUrl(item.qr_image));
-
-    if (!response.ok) {
-      throw new Error("Unable to fetch QR image.");
+  const handleDownloadQR = async (item) => {
+    if (!item.qr_image) {
+      toast.error("QR image is not available.");
+      return;
     }
 
-    const blob = await response.blob();
-    blobUrl = window.URL.createObjectURL(blob);
+    let blobUrl;
 
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = `${(item.location_name || "Location").replace(
-      /[^a-z0-9]/gi,
-      "_"
-    )}_QR.png`;
+    try {
+      const response = await fetch(getImageUrl(item.qr_image));
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+      if (!response.ok) {
+        throw new Error("Unable to fetch QR image.");
+      }
 
-    toast.success("QR download started.");
-  } catch (error) {
-    console.error("Download QR:", error);
-    toast.error("Failed to download QR image. Check CORS settings.");
-  } finally {
-    if (blobUrl) {
-      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      const blob = await response.blob();
+      blobUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `${(item.location_name || "Location").replace(
+        /[^a-z0-9]/gi,
+        "_"
+      )}_QR.png`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      toast.success("QR download started.");
+    } catch (error) {
+      console.error("Download QR:", error);
+      toast.error("Failed to download QR image. Check CORS settings.");
+    } finally {
+      if (blobUrl) {
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      }
     }
-  }
-};
+  };
 
   // ============================================
   // RENDER
@@ -385,10 +395,10 @@ const handleDownloadQR = async (item) => {
 
           <div>
             <h1 className="text-xl font-bold text-gray-800">
-              Location QR Management
+              QR Management
             </h1>
 
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-700">
               Manage location-based QR codes.
             </p>
           </div>
@@ -399,7 +409,7 @@ const handleDownloadQR = async (item) => {
           className="flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-600"
         >
           <Plus size={17} />
-          Create Location QR
+          Create QR
         </Link>
       </div>
 
@@ -443,14 +453,34 @@ const handleDownloadQR = async (item) => {
               size={17}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
             />
-
+{/* 
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search location name..."
+              placeholder="Search "
               className="w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
-            />
+            /> */}
+            <input
+  type="text"
+  value={search}
+  onChange={(e) => {
+    const value = e.target.value;
+    setSearch(value);
+
+    const params = new URLSearchParams(searchParams);
+
+    if (value.trim()) {
+      params.set("search", value);
+    } else {
+      params.delete("search");
+    }
+
+    setSearchParams(params, { replace: true });
+  }}
+  placeholder="Search"
+        className="w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+/>
           </div>
         </div>
 
@@ -477,9 +507,9 @@ const handleDownloadQR = async (item) => {
                     {item.location_name || ""}
                   </h3>
 
-                  <p className="mt-1 break-all text-xs text-gray-500">
+                  {/* <p className="mt-1 break-all text-xs text-gray-500">
                     {item.qr_code}
-                  </p>
+                  </p> */}
 
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
 
@@ -592,27 +622,30 @@ const handleDownloadQR = async (item) => {
           )}
         </div>
 
-        {/* FOOTER */}
+        {/* FOOTER (only rendered once there are records, so it never
+            flashes in and out during the initial load) */}
 
-        <div className="border-t bg-gray-50 p-4">
+        {qrRecords.length > 0 && (
+          <div className="border-t bg-gray-50 p-4">
 
-          {hasMore && (
-            <button
-              type="button"
-              onClick={() => loadQRPage(false)}
-              disabled={loadingMore}
-              className="w-full rounded-lg border bg-white py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100 disabled:opacity-50"
-            >
-              {loadingMore ? "Loading..." : "Load More"}
-            </button>
-          )}
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => loadQRPage(false)}
+                disabled={loadingMore}
+                className="w-full rounded-lg border bg-white py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100 disabled:opacity-50"
+              >
+                {loadingMore ? "Loading..." : "Load More"}
+              </button>
+            )}
 
-          {!hasMore && qrRecords.length > 0 && (
-            <p className="text-center text-xs text-gray-400">
-              All QR records loaded.
-            </p>
-          )}
-        </div>
+            {!hasMore && (
+              <p className="text-center text-xs text-gray-400">
+                All QR records loaded.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ============================================
@@ -768,13 +801,13 @@ const handleDownloadQR = async (item) => {
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <h3 className="font-semibold text-gray-800">
-                  Location QR
+                  QR
                 </h3>
 
-                <p className="mt-1 text-xs text-gray-500">
-                  {/* {selectedQR.location_name || "Unnamed Location"} */}
+                {/* <p className="mt-1 text-xs text-gray-500">
+                
                   {selectedQR.location_name || ""}
-                </p>
+                </p> */}
               </div>
 
               <button
@@ -806,9 +839,9 @@ const handleDownloadQR = async (item) => {
                 {selectedQR.location_name || ""}
               </h4>
 
-              <p className="break-all text-xs text-gray-500">
+              {/* <p className="break-all text-xs text-gray-500">
                 {selectedQR.qr_code}
-              </p>
+              </p> */}
 
               <button
                 type="button"

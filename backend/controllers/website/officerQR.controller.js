@@ -118,24 +118,37 @@ export const getScannedQRDetails = async (req, res) => {
 // POST /api/officer/qr/:qrCode/visit
 // ========================================
 
+// POST /api/officer/qr/:qrCode/visit
+
 export const submitOfficerVisit = async (req, res) => {
   let savedImagePath = null;
 
   try {
     const { qrCode } = req.params;
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, officer_id } = req.body;
 
     // 1. Validate QR token
     if (!isValidQRToken(qrCode)) {
       return getError(res, "Invalid QR code", 400);
     }
 
-    // 2. Validate uploaded image
-    if (!req.file || !req.file.buffer) {
-      return getError(res, "Please capture a image first", 400);
+    // 2. Validate officer ID
+    const officerId = Number(officer_id);
+
+    if (
+      !officer_id ||
+      !Number.isInteger(officerId) ||
+      officerId <= 0
+    ) {
+      return getError(res, "Please select an officer", 400);
     }
 
-    // 3. Coordinates must be provided together
+    // 3. Validate uploaded image
+    if (!req.file || !req.file.buffer) {
+      return getError(res, "Please capture an image first", 400);
+    }
+
+    // 4. Coordinates must be provided together
     const hasLatitude = latitude !== undefined && latitude !== "";
     const hasLongitude = longitude !== undefined && longitude !== "";
 
@@ -159,7 +172,7 @@ export const submitOfficerVisit = async (req, res) => {
       visitLongitude = Number(longitude);
     }
 
-    // 4. Find QR and associated police station
+    // 5. Find QR and associated police station
     const [qrRows] = await db.query(
       `SELECT
           q.id AS location_qr_id,
@@ -167,12 +180,9 @@ export const submitOfficerVisit = async (req, res) => {
           q.police_station_id,
           p.station_name,
           p.district
-
        FROM location_qrs q
-
        INNER JOIN police_stations p
           ON p.id = q.police_station_id
-
        WHERE q.qr_code = ?
        LIMIT 1`,
       [qrCode]
@@ -188,15 +198,35 @@ export const submitOfficerVisit = async (req, res) => {
       return getError(res, "This QR code is inactive", 403);
     }
 
-    // 5. Ensure upload directory exists
+    // 6. Verify that the selected officer belongs to this QR's station
+    const [officerRows] = await db.query(
+      `SELECT id, name
+       FROM police_station_officers
+       WHERE id = ?
+         AND police_station_id = ?
+       LIMIT 1`,
+      [officerId, qr.police_station_id]
+    );
+
+    if (!officerRows.length) {
+      return getError(
+        res,
+        "Selected officer does not belong to this police station",
+        400
+      );
+    }
+
+    const officer = officerRows[0];
+
+    // 7. Ensure upload directory exists
     await fs.mkdir(uploadDirectory, { recursive: true });
 
-    // 6. Generate unique image filename
+    // 8. Generate unique image filename
     const fileName = `${crypto.randomUUID()}.jpg`;
 
     savedImagePath = path.join(uploadDirectory, fileName);
 
-    // 7. Compress image using Sharp
+    // 9. Compress image using Sharp
     try {
       await sharp(req.file.buffer)
         .rotate()
@@ -214,51 +244,51 @@ export const submitOfficerVisit = async (req, res) => {
     } catch (imageError) {
       console.error("Image processing error:", imageError);
 
-      // Remove partially created image, if any
       await fs.unlink(savedImagePath).catch(() => {});
       savedImagePath = null;
 
       return getError(res, "Invalid or corrupted image", 400);
     }
 
-    // 8. Relative image path for database
+    // 10. Relative image path for database
     const imagePath = `/uploads/officer-visits/${fileName}`;
 
-    // 9. Save visit details
+    // 11. Save visit details, including selected officer
     const [result] = await db.query(
-      `INSERT INTO officer_qr_visits
+      `INSERT INTO officer_visits
       (
         location_qr_id,
         police_station_id,
-        selfie_image,
+        officer_id,
+        image,
         latitude,
         longitude,
         visited_at
       )
-      VALUES (?, ?, ?, ?, ?, NOW())`,
+      VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [
         qr.location_qr_id,
         qr.police_station_id,
+        officerId,
         imagePath,
         visitLatitude,
         visitLongitude,
       ]
     );
 
-    // 10. Send response
+    // 12. Send response
     return res.status(201).json({
       success: true,
       message: "Visit submitted successfully",
-
       data: {
         id: result.insertId,
         location_qr_id: qr.location_qr_id,
         police_station_id: qr.police_station_id,
-
+        officer_id: officer.id,
+        officer_name: officer.name,
         station_name: qr.station_name,
         district: qr.district,
-
-        selfie_image: imagePath,
+        image: imagePath,
         latitude: visitLatitude,
         longitude: visitLongitude,
         visited_at: new Date(),
@@ -273,5 +303,54 @@ export const submitOfficerVisit = async (req, res) => {
     console.error("Submit officer visit:", error);
 
     return getError(res, "Failed to submit officer visit", 500);
+  }
+};
+// ========================================
+// GET OFFICERS BY SCANNED QR
+// GET /api/officer/qr/:qrCode/officers
+// ========================================
+// GET /api/officer/qr/:qrCode/officers
+
+export const getAllOfficersByPoliceStation = async (req, res) => {
+  try {
+    const { qrCode } = req.params;
+
+    if (!isValidQRToken(qrCode)) {
+      return getError(res, "Invalid QR code", 400);
+    }
+
+    // Find the police station associated with this active QR
+    const [qrRows] = await db.query(
+      `SELECT police_station_id
+       FROM location_qrs
+       WHERE qr_code = ?
+         AND is_active = 1
+       LIMIT 1`,
+      [qrCode]
+    );
+
+    if (!qrRows.length) {
+      return getError(res, "QR code not found or inactive", 404);
+    }
+
+    const policeStationId = qrRows[0].police_station_id;
+
+    // Fetch all officers assigned to this station
+    const [officers] = await db.query(
+      `SELECT id, name
+       FROM police_station_officers
+       WHERE police_station_id = ?
+       ORDER BY name ASC`,
+      [policeStationId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Officers fetched successfully",
+      data: officers,
+    });
+  } catch (error) {
+    console.error("Get officers by scanned QR:", error);
+    return getError(res, "Failed to fetch officers", 500);
   }
 };

@@ -6,43 +6,62 @@ import {
   Users,
   CalendarDays,
   Database,
+  QrCode,
+  Building2,
 } from "lucide-react";
 
 export default function Sidebar({ mobileOpen, setMobileOpen }) {
   const location = useLocation();
   const scrollRef = useRef(null);
-  const scrollPos = useRef(0);
+
 
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname, setMobileOpen]);
 
   const isActive = (path) => location.pathname === path;
-
   const menuItems = [
+  {
+    label: "Dashboard",
+    path: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "QR Management",
+    path: "/location-qrs",
+    icon: QrCode,
+  },
     {
-      label: "Dashboard",
-      path: "/dashboard",
-      icon: LayoutDashboard,
-    },
+    label: "Police Station Management",
+    path: "/police-stations",
+    icon: Building2,
+  },
+];
+
+  // const menuItems = [
+  //   {
+  //     label: "Dashboard",
+  //     path: "/dashboard",
+  //     icon: LayoutDashboard,
+  //   },
     
    
-    {
-      label: "QR",
-      path: "/location-qrs",
-      icon: CalendarDays,
-    },
-    //  {
-    //   label: "Database",
-    //   path: "/database",
-    //   icon: Database,
-    // },
-    // {
-    //   label: "Upload database",
-    //   path: "/upload",
-    //   icon: Users,
-    // },
-  ];
+  //   {
+  //     label: "QR",
+  //     path: "/location-qrs",
+  //     icon: CalendarDays,
+  //   },
+  //   //  {
+  //   //   label: "Database",
+  //   //   path: "/database",
+  //   //   icon: Database,
+  //   // },
+  //   // {
+  //   //   label: "Upload database",
+  //   //   path: "/upload",
+  //   //   icon: Users,
+  //   // },
+  //];
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
