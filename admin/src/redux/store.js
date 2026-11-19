@@ -17,6 +17,7 @@ import { userApi } from "./api/userApi";
 import { personnelApi } from "./api/personnelApi";
 import { uploadApi } from "./api/uploadApi";
 import { dashboardApi } from "./api/dashboardApi";
+import { locationQRApi } from "./api/locationQRApi";
 
 
 
@@ -32,6 +33,7 @@ const rootReducer = combineReducers({
  [uploadApi.reducerPath]: uploadApi.reducer,
   [personnelApi.reducerPath]: personnelApi.reducer,
   [dashboardApi.reducerPath]: dashboardApi.reducer,
+  [locationQRApi.reducerPath]: locationQRApi.reducer,
  
  
  
@@ -57,7 +59,8 @@ const store = configureStore({
       
       uploadApi.middleware,
       personnelApi.middleware,
-      dashboardApi.middleware
+      dashboardApi.middleware,
+      locationQRApi.middleware
      
     ),
 });

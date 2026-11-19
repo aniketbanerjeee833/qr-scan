@@ -26,21 +26,22 @@ export default function Sidebar({ mobileOpen, setMobileOpen }) {
       icon: LayoutDashboard,
     },
     
+   
     {
-      label: "Leave Management",
-      path: "/leave",
+      label: "QR",
+      path: "/location-qrs",
       icon: CalendarDays,
     },
-     {
-      label: "Database",
-      path: "/database",
-      icon: Database,
-    },
-    {
-      label: "Upload database",
-      path: "/upload",
-      icon: Users,
-    },
+    //  {
+    //   label: "Database",
+    //   path: "/database",
+    //   icon: Database,
+    // },
+    // {
+    //   label: "Upload database",
+    //   path: "/upload",
+    //   icon: Users,
+    // },
   ];
 
   const SidebarContent = () => (

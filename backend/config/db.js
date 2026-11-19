@@ -30,7 +30,7 @@ const db = mysql.createPool({
   // port:3306,
   user: "root",
   password: '',  // or your DB password
-  database: "leave-management",
+  database: "qr-scan",
 
 });
  

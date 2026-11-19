@@ -9,7 +9,8 @@
  import uploadRoutes from "./routes/admin/uploadRoutes.js"
 import personnelRoutes from "./routes/admin/personnelRoutes.js"
 import dashboardRoutes from "./routes/admin/dashboardRoutes.js"
-
+import locationQRRoutes from "./routes/admin/locationQR.routes.js"
+import officerQrRoutes from "./routes/website/officerQR.routes.js"
 
 import express from "express";
 
@@ -113,10 +114,10 @@ app.use(cookieParser());
 const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:5174",
-    "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-    "http://192.168.0.114:5173"
+    "http://192.168.0.114:5173",
+     "http://192.168.0.103:5173"
 ];
 
 app.use(cors({
@@ -163,6 +164,9 @@ app.use("/api/admin/personnel", personnelRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 
 
+
+app.use("/api/admin/location-qrs", locationQRRoutes);
+app.use("/api/officer", officerQrRoutes);
 //clearExpiredSessions();
 //app.use(errorHandler)
 const PORT = process.env.PORT || 4000;

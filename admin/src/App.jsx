@@ -9,6 +9,7 @@ import Spinner from "./components/Layout/Spinner";
 
 
 
+
 const Login = lazy(() => import("./pages/User/Login/Login"));
 // const UploadPage = lazy(() => import("./pages/UploadPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -16,6 +17,8 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 
 
  const LeaveManagement = lazy(() => import("./pages/LeaveManagement"));
+ const LocationQRManagement= lazy(() => import("./pages/LocationQRManagement"));
+ const CreateLocationQR= lazy(() => import("./pages/CreateLocationQR"));
  const Database = lazy(() => import("./pages/Database"));
   const UploadPersonnel = lazy(() => import("./pages/Upload"));
 // import all your components...
@@ -42,7 +45,7 @@ const RoleAwareFallback = ({ user }) => {
 export default function RouterWrapper() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
+console.log("Browser path:", window.location.pathname);
   // ✅ Call backend to check session
   useEffect(() => {
     fetch("http://localhost:4000/api/admin/me", {
@@ -60,34 +63,65 @@ export default function RouterWrapper() {
      <BrowserRouter>
      <>
   <Suspense fallback={<Spinner size="lg" text="Loading ..." />}>
-      <Routes>
+      {/*<Routes>
 
-        {/* 🔐 Public Route */}
+       
         <Route element={<PublicRoute user={user} loading={loading} />}>
           <Route path="/login" element={<Login />} />
         </Route>
 
         {/* 🔒 Protected Routes */}
-        <Route element={<ProtectedRoute user={user} loading={loading} />}>
+        {/* <Route element={<ProtectedRoute user={user} loading={loading} />}>
           <Route element={<Layout/>}>
-             {/* <Route path="/upload" element={<UploadPage/>} /> */}
+           
             <Route path="/dashboard" element={<Dashboard />} />
 
           
            
            
              <Route path="/leave" element={<LeaveManagement />}/>
+             <Route path="/location-qrs" element={<LocationQRManagement/>}/>
+             <Route
+  path="/location-qrs/create"
+  element={<CreateLocationQR />}
+/>
              <Route path="/database" element={<Database/>}/>
               <Route path="/upload" element={<UploadPersonnel />}/>
 
 
           </Route>
-        </Route>
+        </Route> */}
+        {/* Protected Routes */}
+
 
         {/* 🔁 Fallback */}
-        <Route path="*" element={<RoleAwareFallback user={user} />} />
+        {/* <Route path="*" element={<RoleAwareFallback user={user} />} /> 
 
-      </Routes>
+
+      </Routes>*/}
+      <Routes>
+  {/* Public routes */}
+  <Route element={<PublicRoute user={user} loading={loading} />}>
+    <Route path="/login" element={<Login />} />
+  </Route>
+
+  {/* Protected routes */}
+  <Route element={<ProtectedRoute user={user} loading={loading} />}>
+    <Route path="/" element={<Layout />}>
+      <Route index element={<Navigate to="/dashboard" replace />} />
+
+      <Route path="dashboard" element={<Dashboard />} />
+      <Route path="leave" element={<LeaveManagement />} />
+      <Route path="location-qrs" element={<LocationQRManagement />} />
+      <Route path="location-qrs/create" element={<CreateLocationQR />} />
+      <Route path="database" element={<Database />} />
+      <Route path="upload" element={<UploadPersonnel />} />
+    </Route>
+  </Route>
+
+  {/* 404 */}
+ <Route path="*" element={<RoleAwareFallback user={user} />} /> 
+</Routes>
       </Suspense>
       </>
       <ToastContainer position="top-right" autoClose={3000} />
