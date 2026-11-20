@@ -120,6 +120,7 @@ export const getScannedQRDetails = async (req, res) => {
 
 // POST /api/officer/qr/:qrCode/visit
 
+
 export const submitOfficerVisit = async (req, res) => {
   let savedImagePath = null;
 
@@ -198,7 +199,7 @@ export const submitOfficerVisit = async (req, res) => {
       return getError(res, "This QR code is inactive", 403);
     }
 
-    // 6. Verify that the selected officer belongs to this QR's station
+    // 6. Verify officer belongs to this police station
     const [officerRows] = await db.query(
       `SELECT id, name
        FROM police_station_officers
@@ -218,15 +219,33 @@ export const submitOfficerVisit = async (req, res) => {
 
     const officer = officerRows[0];
 
-    // 7. Ensure upload directory exists
-    await fs.mkdir(uploadDirectory, { recursive: true });
+    // 7. Get current date in Asia/Kolkata timezone
+    const visitDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
 
-    // 8. Generate unique image filename
+    // 8. Create date-wise upload directory
+    const dailyUploadDirectory = path.join(
+      uploadDirectory,
+      visitDate
+    );
+
+    await fs.mkdir(dailyUploadDirectory, {
+      recursive: true,
+    });
+
+    // 9. Generate unique image filename
     const fileName = `${crypto.randomUUID()}.jpg`;
 
-    savedImagePath = path.join(uploadDirectory, fileName);
+    savedImagePath = path.join(
+      dailyUploadDirectory,
+      fileName
+    );
 
-    // 9. Compress image using Sharp
+    // 10. Compress image using Sharp
     try {
       await sharp(req.file.buffer)
         .rotate()
@@ -250,10 +269,10 @@ export const submitOfficerVisit = async (req, res) => {
       return getError(res, "Invalid or corrupted image", 400);
     }
 
-    // 10. Relative image path for database
-    const imagePath = `/uploads/officer-visits/${fileName}`;
+    // 11. Relative image path for database
+    const imagePath = `/uploads/officer-visits/${visitDate}/${fileName}`;
 
-    // 11. Save visit details, including selected officer
+    // 12. Save visit details
     const [result] = await db.query(
       `INSERT INTO officer_visits
       (
@@ -276,7 +295,7 @@ export const submitOfficerVisit = async (req, res) => {
       ]
     );
 
-    // 12. Send response
+    // 13. Send response
     return res.status(201).json({
       success: true,
       message: "Visit submitted successfully",
@@ -295,7 +314,7 @@ export const submitOfficerVisit = async (req, res) => {
       },
     });
   } catch (error) {
-    // Remove saved image if database insertion or another step fails
+    // 14. Remove saved image if database insertion fails
     if (savedImagePath) {
       await fs.unlink(savedImagePath).catch(() => {});
     }
@@ -305,6 +324,7 @@ export const submitOfficerVisit = async (req, res) => {
     return getError(res, "Failed to submit officer visit", 500);
   }
 };
+
 // ========================================
 // GET OFFICERS BY SCANNED QR
 // GET /api/officer/qr/:qrCode/officers

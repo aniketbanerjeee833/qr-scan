@@ -11,9 +11,9 @@ import {
 import getError from "../../utils/getError.js";
 
 //const CLIENT_URL = "http://192.168.29.2:5173";
-const CLIENT_URL =
-  "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app";
-
+// const CLIENT_URL =
+//   "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app";
+const CLIENT_URL ="https://2f50-115-187-48-18.ngrok-free.app";
 // Temporary default police station
 // Later, this will come from the authenticated user.
 const DEFAULT_POLICE_STATION_ID = 1;
@@ -92,27 +92,165 @@ const getPoliceStationId = (req) => {
 // POST /api/admin/location-qrs
 // ========================================
 
+// export const createLocationQR = async (req, res) => {
+//   let connection;
+//   const savedQRs = [];
+
+//   try {
+//     const { locations } = req.body;
+
+//     if (!Array.isArray(locations) || locations.length === 0) {
+//       return getError(res, "At least one location is required", 400);
+//     }
+
+//     // Get police station ID
+//     const policeStationId = getPoliceStationId(req);
+
+//     if (!isValidId(policeStationId)) {
+//       return getError(res, "Invalid police station ID", 400);
+//     }
+
+//     // Validate all coordinates before starting transaction
+//     for (const location of locations) {
+//       if (!validateCoordinates(location.latitude, location.longitude)) {
+//         return getError(res, "Invalid latitude or longitude", 400);
+//       }
+
+//       if (
+//         location.location_name !== undefined &&
+//         location.location_name !== null &&
+//         typeof location.location_name !== "string"
+//       ) {
+//         return getError(res, "Invalid location name", 400);
+//       }
+//     }
+
+//     connection = await db.getConnection();
+//     await connection.beginTransaction();
+
+//     const createdLocations = [];
+
+//     for (const location of locations) {
+//       const { location_name, latitude, longitude } = location;
+
+//       const lat = Number(latitude);
+//       const lng = Number(longitude);
+
+//       const cleanLocationName =
+//         typeof location_name === "string"
+//           ? location_name.trim() || null
+//           : null;
+
+//       const qrCode = generateQRToken();
+
+//       // Generate and save QR image
+//       const savedQR = await generateAndSaveQR(qrCode);
+
+//       savedQRs.push(savedQR);
+
+//       // Insert QR with police station relationship
+//      const [result] = await connection.query(
+//   `INSERT INTO location_qrs
+//   (
+//     police_station_id,
+//     location_name,
+//     qr_code,
+//     qr_url,
+//     latitude,
+//     longitude,
+//     qr_image,
+//     is_active
+//   )
+//   VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+//   [
+//     policeStationId,
+//     cleanLocationName,
+//     qrCode,
+//     savedQR.scanUrl,
+//     lat,
+//     lng,
+//     savedQR.filePath,
+//   ]
+// );
+
+//       createdLocations.push({
+//         id: result.insertId,
+//         police_station_id: policeStationId,
+//         location_name: cleanLocationName,
+//         qr_code: qrCode,
+//         scan_url: savedQR.scanUrl,
+//         qr_image: savedQR.filePath,
+//         latitude: lat,
+//         longitude: lng,
+//         is_active: 1,
+//       });
+//     }
+
+//     await connection.commit();
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Location QRs created successfully",
+//       data: createdLocations,
+//     });
+//   } catch (error) {
+//     if (connection) {
+//       await connection.rollback();
+//     }
+
+//     // Delete generated images if database operation fails
+//     for (const savedQR of savedQRs) {
+//       if (savedQR?.filePath) {
+//         await deleteUploadedFile(savedQR.filePath).catch(console.error);
+//       }
+//     }
+
+//     console.error("Create location QR:", error);
+
+//     if (error.code === "ER_DUP_ENTRY") {
+//       return getError(res, "QR code already exists", 409);
+//     }
+
+//     if (error.code === "ER_NO_REFERENCED_ROW_2") {
+//       return getError(res, "Police station does not exist", 400);
+//     }
+
+//     return getError(res, "Failed to create location QR", 500);
+//   } finally {
+//     if (connection) {
+//       connection.release();
+//     }
+//   }
+// };
 export const createLocationQR = async (req, res) => {
   let connection;
+  let transactionStarted = false;
+
   const savedQRs = [];
 
   try {
-    const { locations } = req.body;
+    const { police_station_id, locations } = req.body;
 
+    // Validate police station ID
+    if (!isValidId(police_station_id)) {
+      return getError(res, "Please select a valid police station", 400);
+    }
+
+    const policeStationId = Number(police_station_id);
+
+    // Validate locations array
     if (!Array.isArray(locations) || locations.length === 0) {
       return getError(res, "At least one location is required", 400);
     }
 
-    // Get police station ID
-    const policeStationId = getPoliceStationId(req);
-
-    if (!isValidId(policeStationId)) {
-      return getError(res, "Invalid police station ID", 400);
-    }
-
-    // Validate all coordinates before starting transaction
+    // Validate all locations before starting the transaction
     for (const location of locations) {
-      if (!validateCoordinates(location.latitude, location.longitude)) {
+      if (
+        !validateCoordinates(
+          location.latitude,
+          location.longitude
+        )
+      ) {
         return getError(res, "Invalid latitude or longitude", 400);
       }
 
@@ -126,12 +264,36 @@ export const createLocationQR = async (req, res) => {
     }
 
     connection = await db.getConnection();
+
+    // Verify that the selected police station exists and is active
+    const [stations] = await connection.query(
+      `SELECT id
+       FROM police_stations
+       WHERE id = ?
+         AND is_active = 1
+       LIMIT 1`,
+      [policeStationId]
+    );
+
+    if (!stations.length) {
+      return getError(
+        res,
+        "Police station does not exist or is inactive",
+        400
+      );
+    }
+
     await connection.beginTransaction();
+    transactionStarted = true;
 
     const createdLocations = [];
 
     for (const location of locations) {
-      const { location_name, latitude, longitude } = location;
+      const {
+        location_name,
+        latitude,
+        longitude,
+      } = location;
 
       const lat = Number(latitude);
       const lng = Number(longitude);
@@ -148,30 +310,30 @@ export const createLocationQR = async (req, res) => {
 
       savedQRs.push(savedQR);
 
-      // Insert QR with police station relationship
-     const [result] = await connection.query(
-  `INSERT INTO location_qrs
-  (
-    police_station_id,
-    location_name,
-    qr_code,
-    qr_url,
-    latitude,
-    longitude,
-    qr_image,
-    is_active
-  )
-  VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-  [
-    policeStationId,
-    cleanLocationName,
-    qrCode,
-    savedQR.scanUrl,
-    lat,
-    lng,
-    savedQR.filePath,
-  ]
-);
+      // Insert QR against the selected police station
+      const [result] = await connection.query(
+        `INSERT INTO location_qrs
+        (
+          police_station_id,
+          location_name,
+          qr_code,
+          qr_url,
+          latitude,
+          longitude,
+          qr_image,
+          is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        [
+          policeStationId,
+          cleanLocationName,
+          qrCode,
+          savedQR.scanUrl,
+          lat,
+          lng,
+          savedQR.filePath,
+        ]
+      );
 
       createdLocations.push({
         id: result.insertId,
@@ -187,6 +349,7 @@ export const createLocationQR = async (req, res) => {
     }
 
     await connection.commit();
+    transactionStarted = false;
 
     return res.status(201).json({
       success: true,
@@ -194,14 +357,17 @@ export const createLocationQR = async (req, res) => {
       data: createdLocations,
     });
   } catch (error) {
-    if (connection) {
+    if (connection && transactionStarted) {
       await connection.rollback();
+      transactionStarted = false;
     }
 
-    // Delete generated images if database operation fails
+    // Remove generated images if database operation fails
     for (const savedQR of savedQRs) {
       if (savedQR?.filePath) {
-        await deleteUploadedFile(savedQR.filePath).catch(console.error);
+        await deleteUploadedFile(savedQR.filePath).catch(
+          console.error
+        );
       }
     }
 
@@ -235,6 +401,7 @@ export const getAllLocationQRs = async (req, res) => {
       limit = 10,
       search,
       is_active,
+      station_id,
     } = req.query;
 
     limit = Math.min(Math.max(Number(limit) || 10, 1), 100);
@@ -246,12 +413,25 @@ export const getAllLocationQRs = async (req, res) => {
       return getError(res, "Invalid cursor", 400);
     }
 
+    if (
+      station_id !== undefined &&
+      station_id !== "" &&
+      !isValidId(station_id)
+    ) {
+      return getError(res, "Invalid police station ID", 400);
+    }
+
     const conditions = [];
     const values = [];
 
     if (cursor) {
       conditions.push("q.id < ?");
       values.push(Number(cursor));
+    }
+
+    if (station_id !== undefined && station_id !== "") {
+      conditions.push("q.police_station_id = ?");
+      values.push(Number(station_id));
     }
 
     if (search?.trim()) {
@@ -301,7 +481,6 @@ export const getAllLocationQRs = async (req, res) => {
     );
 
     const hasMore = rows.length > limit;
-
     const data = rows.slice(0, limit);
 
     const nextCursor = hasMore
@@ -323,7 +502,6 @@ export const getAllLocationQRs = async (req, res) => {
     return getError(res, "Failed to fetch location QRs", 500);
   }
 };
-
 // ========================================
 // UPDATE LOCATION DETAILS
 // PUT /api/admin/location-qrs/:id
@@ -340,9 +518,10 @@ export const updateLocationQR = async (req, res) => {
       latitude,
       longitude,
       is_active,
+      police_station_id,
     } = req.body;
 
-    // Validate ID
+    // Validate QR ID
     if (!isValidId(id)) {
       return getError(res, "Invalid location QR ID", 400);
     }
@@ -352,13 +531,22 @@ export const updateLocationQR = async (req, res) => {
       location_name === undefined &&
       latitude === undefined &&
       longitude === undefined &&
-      is_active === undefined
+      is_active === undefined &&
+      police_station_id === undefined
     ) {
       return getError(
         res,
         "At least one field is required to update",
         400
       );
+    }
+
+    // Validate police station ID when provided
+    if (
+      police_station_id !== undefined &&
+      !isValidId(police_station_id)
+    ) {
+      return getError(res, "Invalid police station ID", 400);
     }
 
     // Validate location name
@@ -402,12 +590,11 @@ export const updateLocationQR = async (req, res) => {
     }
 
     connection = await db.getConnection();
-
     await connection.beginTransaction();
 
     // Check whether QR exists
     const [existing] = await connection.query(
-      `SELECT id, police_station_id, latitude, longitude
+      `SELECT id, police_station_id
        FROM location_qrs
        WHERE id = ?
        FOR UPDATE`,
@@ -416,8 +603,23 @@ export const updateLocationQR = async (req, res) => {
 
     if (!existing.length) {
       await connection.rollback();
-
       return getError(res, "Location QR not found", 404);
+    }
+
+    // Verify the new police station exists
+    if (police_station_id !== undefined) {
+      const [stations] = await connection.query(
+        `SELECT id
+         FROM police_stations
+         WHERE id = ?
+         LIMIT 1`,
+        [Number(police_station_id)]
+      );
+
+      if (!stations.length) {
+        await connection.rollback();
+        return getError(res, "Police station does not exist", 400);
+      }
     }
 
     // Build dynamic update query
@@ -427,7 +629,6 @@ export const updateLocationQR = async (req, res) => {
     if (location_name !== undefined) {
       updates.push("location_name = ?");
 
-      // Empty string or null clears the location name
       values.push(
         typeof location_name === "string"
           ? location_name.trim() || null
@@ -449,8 +650,11 @@ export const updateLocationQR = async (req, res) => {
       values.push(Number(is_active));
     }
 
-    // Do not update police_station_id here.
-    // QR remains assigned to its original police station.
+    // Update police station assignment when provided
+    if (police_station_id !== undefined) {
+      updates.push("police_station_id = ?");
+      values.push(Number(police_station_id));
+    }
 
     values.push(id);
 
@@ -461,7 +665,7 @@ export const updateLocationQR = async (req, res) => {
       values
     );
 
-    // Fetch updated record with station name
+    // Fetch updated record including police station name
     const [updated] = await connection.query(
       `SELECT
           q.id,
@@ -495,6 +699,10 @@ export const updateLocationQR = async (req, res) => {
     }
 
     console.error("Update location QR:", error);
+
+    if (error.code === "ER_NO_REFERENCED_ROW_2") {
+      return getError(res, "Police station does not exist", 400);
+    }
 
     return getError(
       res,
@@ -613,6 +821,79 @@ export const regenerateLocationQR = async (req, res) => {
     }
 
     return getError(res, "Failed to regenerate location QR", 500);
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+// ========================================
+// DELETE LOCATION QR
+// DELETE /api/admin/location-qrs/:id
+// ========================================
+
+export const deleteLocationQR = async (req, res) => {
+  let connection;
+
+  try {
+    const { id } = req.params;
+
+    if (!isValidId(id)) {
+      return getError(res, "Invalid location QR ID", 400);
+    }
+
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `SELECT id, qr_image
+       FROM location_qrs
+       WHERE id = ?
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (!rows.length) {
+      await connection.rollback();
+      return getError(res, "Location QR not found", 404);
+    }
+
+    const qrImage = rows[0].qr_image;
+
+    await connection.query(
+      `DELETE FROM location_qrs WHERE id = ?`,
+      [id]
+    );
+
+    await connection.commit();
+
+    // Delete the image only after the database deletion succeeds.
+    if (qrImage) {
+      await deleteUploadedFile(qrImage).catch((error) => {
+        console.error("Could not delete QR image:", error);
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Location QR deleted successfully.",
+    });
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+
+    console.error("Delete location QR:", error);
+
+    if (error.code === "ER_ROW_IS_REFERENCED_2") {
+      return getError(
+        res,
+        "This QR cannot be deleted because related records exist.",
+        409
+      );
+    }
+
+    return getError(res, "Failed to delete location QR", 500);
   } finally {
     if (connection) {
       connection.release();

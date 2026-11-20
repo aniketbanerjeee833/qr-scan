@@ -22,20 +22,23 @@ export default function Sidebar({ mobileOpen, setMobileOpen }) {
   const isActive = (path) => location.pathname === path;
   const menuItems = [
   {
-    label: "Dashboard",
+    //label: "Dashboard",
+    label: "Visit",
     path: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    //label: "Police Station Management",
+    label: "Police Station & Officers",
+    path: "/police-stations",
+    icon: Building2,
   },
   {
     label: "QR Management",
     path: "/location-qrs",
     icon: QrCode,
   },
-    {
-    label: "Police Station Management",
-    path: "/police-stations",
-    icon: Building2,
-  },
+    
 ];
 
   // const menuItems = [

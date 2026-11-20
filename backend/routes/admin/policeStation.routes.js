@@ -17,6 +17,9 @@ import {
   getStationOfficers,
   updateStationOfficer,
   deleteStationOfficer,
+  downloadStationReport,
+  downloadOfficerReport,
+  getOfficerVisitReport,
 } from "../../controllers/admin/policeStation.controller.js";
 
 const router = express.Router();
@@ -51,6 +54,7 @@ router.delete(
   "/:stationId/officers/:officerId",
   deleteStationOfficer
 );
-
-
+router.get("/:stationId/report", downloadStationReport);
+router.get( "/:stationId/officers/:officerId/report", downloadOfficerReport);
+router.get("/:stationId/officers/:officerId/visit-report",getOfficerVisitReport);
 export default router;

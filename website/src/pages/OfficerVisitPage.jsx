@@ -13,11 +13,11 @@ import {
 import { toast } from "react-toastify";
 
 // const API_URL = "http://192.168.29.2:4000/api/";
-const API_URL =
-  "https://108f-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app/api/";
-
-const MAX_DISTANCE = 500;
-const MAX_ACCURACY = 500;
+ //https://f781-115-187-48-18.ngrok-free.app -
+//const API_URL ="https://108f-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app/api/";
+const API_URL ="https://f781-115-187-48-18.ngrok-free.app/api/";
+const MAX_DISTANCE = 100;
+const MAX_ACCURACY = 100;
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const toRadians = (degree) => (degree * Math.PI) / 180;
@@ -164,7 +164,7 @@ const OfficerVisitPage = () => {
             setLocationMessage(
               `You are ${Math.round(
                 calculatedDistance
-              )} metres away. You must be within 500 metres.`
+              )} metres away. You must be within 100 metres.`
             );
           }
         }
@@ -313,29 +313,163 @@ const OfficerVisitPage = () => {
     };
   }, [qrCode, qrDetails]);
 
-  // Selfie selection
-  const handleSelfieChange = (event) => {
-    const file = event.target.files?.[0];
+  // Selfie selection: flip the captured selfie horizontally so that both
+  // the preview and the uploaded file are saved in the unmirrored direction.
+  // const handleImageChange = (event) => {
+  //   const file = event.target.files?.[0];
 
-    if (!file) return;
+  //   if (!file) return;
 
-    if (
-      !["image/jpeg", "image/png", "image/webp"].includes(file.type)
-    ) {
-      toast.error("Only JPG, PNG and WEBP images are allowed");
+  //   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+  //     toast.error("Only JPG, PNG and WEBP images are allowed");
+  //     event.target.value = "";
+  //     return;
+  //   }
+
+  //   if (file.size > 20 * 1024 * 1024) {
+  //     toast.error("Image must be smaller than 20 MB");
+  //     event.target.value = "";
+  //     return;
+  //   }
+
+  //   const sourceUrl = URL.createObjectURL(file);
+  //   const sourceImage = new Image();
+
+  //   sourceImage.onload = () => {
+  //     try {
+  //       const canvas = document.createElement("canvas");
+  //       canvas.width = sourceImage.naturalWidth;
+  //       canvas.height = sourceImage.naturalHeight;
+
+  //       const context = canvas.getContext("2d");
+  //       if (!context) {
+  //         throw new Error("Unable to process the captured image");
+  //       }
+
+  //       // Mirror horizontally once to correct the front-camera selfie.
+  //       context.translate(canvas.width, 0);
+  //       context.scale(-1, 1);
+  //       context.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+
+  //       canvas.toBlob(
+  //         (blob) => {
+  //           URL.revokeObjectURL(sourceUrl);
+
+  //           if (!blob) {
+  //             toast.error("Unable to process the captured image");
+  //             event.target.value = "";
+  //             return;
+  //           }
+
+  //           const correctedFile = new File(
+  //             [blob],
+  //             file.name || "officer-selfie.jpg",
+  //             {
+  //               type: file.type,
+  //               lastModified: Date.now(),
+  //             }
+  //           );
+
+  //           setImage(correctedFile);
+  //           setPreview(URL.createObjectURL(correctedFile));
+  //         },
+  //         file.type
+  //       );
+  //     } catch (error) {
+  //       URL.revokeObjectURL(sourceUrl);
+  //       toast.error(error.message || "Unable to process the captured image");
+  //       event.target.value = "";
+  //     }
+  //   };
+
+  //   sourceImage.onerror = () => {
+  //     URL.revokeObjectURL(sourceUrl);
+  //     toast.error("Unable to read the captured image");
+  //     event.target.value = "";
+  //   };
+
+  //   sourceImage.src = sourceUrl;
+  // };
+
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    toast.error("Only JPG, PNG and WEBP images are allowed");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    toast.error("Image must be smaller than 20 MB");
+    event.target.value = "";
+    return;
+  }
+
+  const sourceUrl = URL.createObjectURL(file);
+  const sourceImage = new Image();
+
+  sourceImage.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = sourceImage.naturalWidth;
+      canvas.height = sourceImage.naturalHeight;
+
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        throw new Error("Unable to process the captured image");
+      }
+
+      // Correct the front-camera horizontal mirroring.
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
+      context.drawImage(sourceImage, 0, 0);
+
+      canvas.toBlob(
+        (blob) => {
+          URL.revokeObjectURL(sourceUrl);
+
+          if (!blob) {
+            toast.error("Unable to process the captured image");
+            event.target.value = "";
+            return;
+          }
+
+          // Store the corrected image, not the original mirrored file.
+          const correctedFile = new File(
+            [blob],
+            "officer-selfie.jpg",
+            {
+              type: "image/jpeg",
+              lastModified: Date.now(),
+            }
+          );
+
+          setImage(correctedFile);
+          setPreview(URL.createObjectURL(correctedFile));
+        },
+        "image/jpeg",
+        0.92
+      );
+    } catch (error) {
+      URL.revokeObjectURL(sourceUrl);
+      toast.error(error.message || "Unable to process image");
       event.target.value = "";
-      return;
     }
-
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error("Image must be smaller than 20 MB");
-      event.target.value = "";
-      return;
-    }
-
-    setImage(file);
-    setPreview(URL.createObjectURL(file));
   };
+
+  sourceImage.onerror = () => {
+    URL.revokeObjectURL(sourceUrl);
+    toast.error("Unable to read the captured image");
+    event.target.value = "";
+  };
+
+  sourceImage.src = sourceUrl;
+};
+
 
   // Submit officer visit
   const handleSubmit = async (event) => {
@@ -394,7 +528,11 @@ const OfficerVisitPage = () => {
       setSubmitting(false);
     }
   };
-
+useEffect(() => {
+  return () => {
+    if (preview) URL.revokeObjectURL(preview);
+  };
+}, [preview]);
   // Loading
   if (loading) {
     return (
@@ -458,14 +596,14 @@ const OfficerVisitPage = () => {
       <div className="mx-auto max-w-lg space-y-5">
 
         {/* Header */}
-        <div className="rounded-2xl bg-blue-700 p-6 text-white shadow-lg">
+        {/* <div className="rounded-2xl bg-blue-700 p-6 text-white shadow-lg">
           <h1 className="text-2xl font-bold">
             Officer Visit Verification
           </h1>
-        </div>
+        </div> */}
 
         {/* QR Details */}
-        <div className="rounded-2xl bg-white p-5 shadow">
+        {/* <div className="rounded-2xl bg-white p-5 shadow">
           <h2 className="mb-4 text-lg font-bold text-gray-800">
             QR Location Details
           </h2>
@@ -490,9 +628,37 @@ const OfficerVisitPage = () => {
               <p className="font-semibold text-gray-800">
                 {qrDetails.police_station?.district || "N/A"}
               </p>
-            </div> */}
+            </div>
           </div>
-        </div>
+        </div> */}
+        {/* Header */}
+<div className="rounded-2xl bg-blue-700 p-6 text-white shadow-lg">
+  <h1 className="text-2xl font-bold">
+    Officer Visit Verification
+  </h1>
+
+<p
+  title={qrDetails.police_station?.station_name || "N/A"}
+  className="mt-2 max-w-full whitespace-normal break-words text-sm font-medium leading-6 text-blue-100"
+>
+  Police Station: {qrDetails.police_station?.station_name || "N/A"}
+</p>
+</div>
+
+{/* QR Details */}
+<div className="rounded-2xl bg-white p-5 shadow">
+  <h2 className="mb-4 text-lg font-bold text-gray-800">
+    QR Location Details
+  </h2>
+
+  <div className="text-sm">
+    <p className="text-gray-500">Location</p>
+
+    <p className="font-semibold text-gray-800">
+      {qrDetails.location_name || "N/A"}
+    </p>
+  </div>
+</div>
 
         {/* Automatic GPS Verification */}
         <div className="rounded-2xl bg-white p-5 shadow">
@@ -503,7 +669,7 @@ const OfficerVisitPage = () => {
 
           <p className="mb-4 text-sm text-gray-500">
             Your GPS location is checked automatically. You must be
-            within 500 metres of this QR location.
+            within 100 metres of this QR location.
           </p>
 
           <div
@@ -549,7 +715,7 @@ const OfficerVisitPage = () => {
             )}
 
             <p className="mt-1 text-sm">
-              Allowed distance: 500 metres
+              Allowed distance: 100 metres
             </p>
           </div>
 
@@ -638,7 +804,7 @@ const OfficerVisitPage = () => {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               capture="user"
-              onChange={handleSelfieChange}
+              onChange={handleImageChange}
               className="hidden"
             />
           </label>

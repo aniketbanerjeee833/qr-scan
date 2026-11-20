@@ -1,7 +1,8 @@
 
 import db from "../../config/db.js";
 import getError from "../../utils/getError.js";
-
+import ExcelJS from "exceljs";
+import { addSheet, sendWorkbook, toDateKey, toDateLabel, toTimeLabel } from "../../utils/excelReportFunctions.js";
 export const getOfficerVisits = async (req, res) => {
   try {
     const {
@@ -111,38 +112,45 @@ export const getOfficerVisits = async (req, res) => {
 
     // Fetch one extra row to determine hasMore
     const [rows] = await db.query(
-      `
-        SELECT
-          ov.id,
-          ov.location_qr_id,
-          ov.police_station_id,
-          ov.image,
-          ov.latitude,
-          ov.longitude,
-          ov.visited_at,
+  `
+    SELECT
+      ov.id,
+      ov.location_qr_id,
+      ov.police_station_id,
+      ov.officer_id,
+      ov.image,
+      ov.latitude,
+      ov.longitude,
+      ov.visited_at,
 
-          q.location_name,
-          q.qr_code,
+      q.location_name,
+      q.qr_code,
 
-          p.station_name,
-          p.district
+      p.station_name,
+      p.district,
 
-        FROM officer_visits ov
+      o.name AS officer_name,
+      o.phone_number AS officer_phone
 
-        LEFT JOIN location_qrs q
-          ON q.id = ov.location_qr_id
+    FROM officer_visits ov
 
-        LEFT JOIN police_stations p
-          ON p.id = ov.police_station_id
+    LEFT JOIN location_qrs q
+      ON q.id = ov.location_qr_id
 
-        ${whereClause}
+    LEFT JOIN police_stations p
+      ON p.id = ov.police_station_id
 
-        ORDER BY ov.id DESC
+    LEFT JOIN police_station_officers o
+      ON o.id = ov.officer_id
 
-        LIMIT ?
-      `,
-      [...values, limit + 1]
-    );
+    ${whereClause}
+
+    ORDER BY ov.id DESC
+
+    LIMIT ?
+  `,
+  [...values, limit + 1]
+);
 
     // Pagination details
     const hasMore = rows.length > limit;
@@ -169,5 +177,225 @@ export const getOfficerVisits = async (req, res) => {
   } catch (error) {
     console.error("Get officer visits:", error);
     return getError(res, "Failed to fetch officer visits", 500);
+  }
+};
+const getTodayDate = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+// Validate YYYY-MM-DD
+const isValidDate = (date) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return false;
+  }
+
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === date
+  );
+};
+
+
+// ========================================
+// DOWNLOAD OFFICER VISITS REPORT (EXCEL)
+// GET /api/admin/officer-visit/report
+// ?visit_date=YYYY-MM-DD&search=text
+// ========================================
+
+
+export const downloadOfficerVisitsReport = async (req, res) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const selectedDate = req.query.visit_date || getTodayDate();
+
+    // Validate date
+    if (!isValidDate(selectedDate)) {
+      return getError(
+        res,
+        "Invalid date format. Use YYYY-MM-DD",
+        400
+      );
+    }
+
+    // ----------------------------------
+    // BUILD FILTERS
+    // ----------------------------------
+
+    const conditions = [
+      "ov.visited_at >= ?",
+      "ov.visited_at < DATE_ADD(?, INTERVAL 1 DAY)",
+    ];
+
+    const values = [
+      `${selectedDate} 00:00:00`,
+      selectedDate,
+    ];
+
+    if (search) {
+      const searchValue = `%${search}%`;
+
+      conditions.push(`
+        (
+          p.station_name LIKE ?
+          OR p.district LIKE ?
+          OR q.location_name LIKE ?
+        )
+      `);
+
+      values.push(
+        searchValue,
+        searchValue,
+        searchValue
+      );
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    // ----------------------------------
+    // FETCH ALL MATCHING VISITS
+    // ----------------------------------
+
+    const [visits] = await db.query(
+      `
+        SELECT
+          ov.id,
+          ov.visited_at,
+          ov.latitude,
+          ov.longitude,
+
+          q.location_name,
+
+          p.station_name,
+          p.district,
+
+          o.name AS officer_name,
+          o.phone_number AS officer_phone
+
+        FROM officer_visits ov
+
+        LEFT JOIN location_qrs q
+          ON q.id = ov.location_qr_id
+
+        LEFT JOIN police_stations p
+          ON p.id = ov.police_station_id
+
+        LEFT JOIN police_station_officers o
+          ON o.id = ov.officer_id
+
+        ${whereClause}
+
+        ORDER BY ov.visited_at DESC, ov.id DESC
+      `,
+      values
+    );
+
+    // ----------------------------------
+    // PREPARE EXCEL DATA
+    // ----------------------------------
+
+    const info = [
+      ["Report Date", selectedDate],
+      ["Search", search || "All"],
+      ["Total Visits", visits.length],
+    ];
+
+    const workbook = new ExcelJS.Workbook();
+
+    workbook.creator =
+      "Police Station Visit Verification System";
+
+    workbook.created = new Date();
+
+    // ----------------------------------
+    // OFFICER VISITS SHEET
+    // ----------------------------------
+
+    const headers = [
+      "Sr No",
+      "Officer",
+      "Phone",
+      "Police Station",
+      "District",
+      "Location",
+      "Visit Date",
+      "Visit Time",
+      "Latitude",
+      "Longitude",
+    ];
+
+    const widths = [
+      8,
+      25,
+      16,
+      25,
+      20,
+      25,
+      14,
+      14,
+      14,
+      14,
+    ];
+
+    const rows = visits.map((visit, index) => {
+      return [
+        index + 1,
+        visit.officer_name || "N/A",
+        visit.officer_phone || "N/A",
+        visit.station_name || "N/A",
+        visit.district || "N/A",
+        visit.location_name || "N/A",
+        toDateLabel(toDateKey(visit.visited_at)),
+        toTimeLabel(visit.visited_at),
+        visit.latitude !== null
+          ? Number(visit.latitude)
+          : "",
+        visit.longitude !== null
+          ? Number(visit.longitude)
+          : "",
+      ];
+    });
+
+    addSheet(workbook, "Officer Visits", {
+      title: "Officer Visit Report",
+      info,
+      headers,
+      widths,
+      rows,
+    });
+
+    // ----------------------------------
+    // SEND EXCEL FILE
+    // ----------------------------------
+
+    const filename = `officer_visits_${selectedDate}.xlsx`;
+
+    return await sendWorkbook(
+      res,
+      workbook,
+      filename
+    );
+
+  } catch (error) {
+    console.error(
+      "Download officer visits report:",
+      error
+    );
+
+    if (res.headersSent) {
+      return res.end();
+    }
+
+    return getError(
+      res,
+      "Failed to generate officer visits report",
+      500
+    );
   }
 };

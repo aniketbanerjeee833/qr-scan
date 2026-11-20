@@ -1,3 +1,4 @@
+
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 export const locationQRApi = createApi({
@@ -64,6 +65,18 @@ export const locationQRApi = createApi({
         { type: "LocationQR", id: "LIST" },
       ],
     }),
+
+    // Delete location QR
+    deleteLocationQR: builder.mutation({
+      query: (id) => ({
+        url: `admin/location-qrs/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (result, error, id) => [
+        { type: "LocationQR", id },
+        { type: "LocationQR", id: "LIST" },
+      ],
+    }),
   }),
 });
 
@@ -73,4 +86,5 @@ export const {
   useLazyGetAllLocationQRsQuery,
   useUpdateLocationQRMutation,
   useRegenerateLocationQRMutation,
+  useDeleteLocationQRMutation,
 } = locationQRApi;

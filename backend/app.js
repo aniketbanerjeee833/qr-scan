@@ -150,12 +150,14 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
   "http://192.168.0.114:5173",
-  "http://192.168.29.2:5173",
+  //"http://192.168.29.2:5173",
+  "http://192.168.0.103:5173",
 
   // Frontend ngrok URL
-  "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app",
+  //"https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app",
+  "https://2f50-115-187-48-18.ngrok-free.app",
 ];
-
+//22.474272015642285, 88.36488516878663 office
 app.use(cors({
   origin: function (origin, callback) {
     console.log("Incoming frontend origin:", origin);

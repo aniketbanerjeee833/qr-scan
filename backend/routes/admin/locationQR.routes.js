@@ -3,6 +3,7 @@ import express from "express";
 
 import {
   createLocationQR,
+  deleteLocationQR,
   getAllLocationQRs,
   regenerateLocationQR,
   updateLocationQR,
@@ -21,5 +22,6 @@ router.put("/:id", updateLocationQR);
 
 // Generate a completely new QR token and image
 router.post("/:id/regenerate", regenerateLocationQR);
+router.delete("/:id", deleteLocationQR);
 
 export default router;

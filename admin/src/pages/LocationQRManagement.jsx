@@ -6,7 +6,9 @@ import {
   useLazyGetAllLocationQRsQuery,
   useUpdateLocationQRMutation,
   useRegenerateLocationQRMutation,
+  useDeleteLocationQRMutation,
 } from "@/redux/api/locationQRApi";
+import { useGetPoliceStationsQuery } from "@/redux/api/policeStationApi";
 
 import {
   MapPin,
@@ -21,12 +23,14 @@ import {
   RotateCw,
   Power,
   Plus,
+  Trash2,
 } from "lucide-react";
+import DeleteAlertModal from "@/components/Modal/DeleteAlertModal";
 
 const PAGE_SIZE = 10;
 
-const API_ORIGIN = "http://192.168.29.2:4000";
-
+//const API_ORIGIN = "http://192.168.29.2:4000";
+const API_ORIGIN = "http://192.168.0.103:4000";
 const getImageUrl = (imagePath) => {
   if (!imagePath) return "";
 
@@ -45,6 +49,14 @@ export default function LocationQRManagement() {
     useRegenerateLocationQRMutation();
 
   const [triggerQRs] = useLazyGetAllLocationQRsQuery();
+const [deleteLocationQR, { isLoading: isDeleting }] =
+  useDeleteLocationQRMutation();
+  const {
+    data: stationResponse,
+    isLoading: isLoadingStations,
+  } = useGetPoliceStationsQuery({ limit: 100 });
+
+  const stations = stationResponse?.data || [];
 
   // ============================================
   // QR LIST STATE
@@ -60,11 +72,15 @@ export default function LocationQRManagement() {
 
   const [selectedQR, setSelectedQR] = useState(null);
   const [editingQR, setEditingQR] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 const [searchParams, setSearchParams] = useSearchParams();
 
 const [search, setSearch] = useState(
   () => searchParams.get("search") || ""
 );
+
+  // Selected station controls which QR records are displayed.
+  const [selectedStationId, setSelectedStationId] = useState("");
   // ============================================
   // EDIT FORM
   // ============================================
@@ -74,6 +90,7 @@ const [search, setSearch] = useState(
     latitude: "",
     longitude: "",
     is_active: 1,
+    police_station_id: "",
   });
 
   // ============================================
@@ -113,6 +130,10 @@ const [search, setSearch] = useState(
 
         if (searchTerm.trim()) {
           params.search = searchTerm.trim();
+        }
+
+        if (selectedStationId) {
+          params.station_id = selectedStationId;
         }
 
         if (!reset && cursorRef.current) {
@@ -161,7 +182,7 @@ const [search, setSearch] = useState(
         }
       }
     },
-    [search, triggerQRs]
+    [search, selectedStationId, triggerQRs]
   );
 
   // ============================================
@@ -196,6 +217,7 @@ const [search, setSearch] = useState(
       latitude: String(item.latitude ?? ""),
       longitude: String(item.longitude ?? ""),
       is_active: Number(item.is_active),
+      police_station_id: String(item.police_station_id ?? ""),
     });
   };
 
@@ -247,6 +269,7 @@ const [search, setSearch] = useState(
       latitude: lat,
       longitude: lng,
       is_active: Number(editForm.is_active),
+      police_station_id: Number(editForm.police_station_id),
     };
 
     // Preserve existing name if the field is blank.
@@ -276,28 +299,28 @@ const [search, setSearch] = useState(
   // ACTIVATE / DEACTIVATE
   // ============================================
 
-  const handleToggleActive = async (item) => {
-    try {
-      await updateLocationQR({
-        id: item.id,
-        is_active: item.is_active ? 0 : 1,
-      }).unwrap();
+  // const handleToggleActive = async (item) => {
+  //   try {
+  //     await updateLocationQR({
+  //       id: item.id,
+  //       is_active: item.is_active ? 0 : 1,
+  //     }).unwrap();
 
-      toast.success(
-        item.is_active
-          ? "Location deactivated successfully."
-          : "Location activated successfully."
-      );
+  //     toast.success(
+  //       item.is_active
+  //         ? "Location deactivated successfully."
+  //         : "Location activated successfully."
+  //     );
 
-      await loadQRPage(true);
-    } catch (error) {
-      console.error("Toggle location:", error);
+  //     await loadQRPage(true);
+  //   } catch (error) {
+  //     console.error("Toggle location:", error);
 
-      toast.error(
-        error?.data?.message || "Failed to update status."
-      );
-    }
-  };
+  //     toast.error(
+  //       error?.data?.message || "Failed to update status."
+  //     );
+  //   }
+  // };
 
   // ============================================
   // REGENERATE QR
@@ -376,7 +399,41 @@ const [search, setSearch] = useState(
       }
     }
   };
+// Open delete confirmation modal
+const handleDeleteClick = (item) => {
+  setDeleteTarget(item);
+};
 
+// Close delete confirmation modal
+const closeDeleteModal = () => {
+  if (isDeleting) return;
+  setDeleteTarget(null);
+};
+
+// Confirm and call delete API
+const handleConfirmDelete = async () => {
+  if (!deleteTarget) return;
+
+  try {
+    await deleteLocationQR(deleteTarget.id).unwrap();
+
+    toast.success("Location QR deleted successfully.");
+
+    if (selectedQR?.id === deleteTarget.id) {
+      setSelectedQR(null);
+    }
+
+    setDeleteTarget(null);
+
+    await loadQRPage(true);
+  } catch (error) {
+    console.error("Delete location QR:", error);
+
+    toast.error(
+      error?.data?.message || "Failed to delete location QR."
+    );
+  }
+};
   // ============================================
   // RENDER
   // ============================================
@@ -446,144 +503,226 @@ const [search, setSearch] = useState(
             </button>
           </div>
 
-          {/* SEARCH */}
+          {/* FILTER + SEARCH */}
+<div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
 
-          <div className="relative">
-            <Search
-              size={17}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-{/* 
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search "
-              className="w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
-            /> */}
-            <input
-  type="text"
-  value={search}
-  onChange={(e) => {
-    const value = e.target.value;
-    setSearch(value);
+  {/* POLICE STATION FILTER */}
+  <div className="md:col-span-1">
+    <label className="mb-1.5 block text-xs font-medium text-gray-700">
+      Filter by Police Station
+    </label>
 
-    const params = new URLSearchParams(searchParams);
+    <select
+      value={selectedStationId}
+      onChange={(e) => setSelectedStationId(e.target.value)}
+      disabled={isLoadingStations}
+      className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+    >
+      <option value="">All Police Stations</option>
 
-    if (value.trim()) {
-      params.set("search", value);
-    } else {
-      params.delete("search");
-    }
+      {stations.map((station) => (
+        <option key={station.id} value={station.id}>
+          {station.station_name}
+          {station.district ? ` - ${station.district}` : ""}
+        </option>
+      ))}
+    </select>
+  </div>
 
-    setSearchParams(params, { replace: true });
-  }}
-  placeholder="Search"
+  {/* SEARCH */}
+  {/* <div className="md:col-span-2">
+    <label className="mb-1.5 block text-xs font-medium text-gray-700">
+      Search 
+    </label>
+
+    <div className="relative">
+      <Search
+        size={17}
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+      />
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => {
+          const value = e.target.value;
+          setSearch(value);
+
+          const params = new URLSearchParams(searchParams);
+
+          if (value.trim()) {
+            params.set("search", value);
+          } else {
+            params.delete("search");
+          }
+
+          setSearchParams(params, { replace: true });
+        }}
+        placeholder="Search ..."
         className="w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
-/>
-          </div>
+      />
+    </div>
+  </div> */}
+{/* SEARCH + RESET */}
+<div className="md:col-span-2">
+  <label className="mb-1.5 block text-xs font-medium text-gray-700">
+    Search
+  </label>
+
+  <div className="flex items-center gap-2">
+    {/* SEARCH INPUT */}
+    <div className="relative min-w-0 flex-1">
+      <Search
+        size={17}
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+      />
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => {
+          const value = e.target.value;
+          setSearch(value);
+
+          const params = new URLSearchParams(searchParams);
+
+          if (value.trim()) {
+            params.set("search", value);
+          } else {
+            params.delete("search");
+          }
+
+          setSearchParams(params, { replace: true });
+        }}
+        placeholder="Search"
+        className="w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+      />
+    </div>
+
+    {/* RESET BUTTON */}
+    <button
+      type="button"
+      onClick={() => {
+        setSearch("");
+        setSelectedStationId("");
+        setSearchParams({}, { replace: true });
+      }}
+      className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-100"
+    >
+      <RefreshCw size={15} />
+      Reset
+    </button>
+  </div>
+</div>
+</div>
         </div>
 
         {/* QR RECORDS */}
 
         <div className="divide-y">
 
-          {qrRecords.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col gap-3 p-4 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
-            >
+         {qrRecords.map((item, index) => (
+  <div
+    key={item.id}
+    className="flex flex-col gap-3 p-4 transition hover:bg-gray-50 lg:flex-row lg:items-center lg:justify-between"
+  >
+    {/* SERIAL NUMBER */}
+    <div className="flex shrink-0 items-center gap-2 lg:w-16">
+      <span className="text-sm font-semibold tabular-nums text-gray-700">
+        {index + 1}
+      </span>
+    </div>
 
-              {/* LOCATION DETAILS */}
+    {/* LOCATION DETAILS */}
+    <div className="flex min-w-0 flex-1 items-start gap-3">
+      <div className="shrink-0 rounded-lg bg-red-50 p-2.5 text-red-600">
+        <MapPin size={20} />
+      </div>
 
-              <div className="flex min-w-0 items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <p
+          title={item.station_name || "Police station not available"}
+          className="break-words text-xs font-medium leading-5 text-gray-700"
+        >
+          Police Station: {item.station_name || "N/A"}
+        </p>
 
-                <div className="rounded-lg bg-red-50 p-2.5 text-red-600">
-                  <MapPin size={20} />
-                </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <Navigation size={13} />
+            {item.latitude}, {item.longitude}
+          </span>
 
-                <div className="min-w-0">
-                  <h3 className="truncate text-sm font-semibold text-gray-800">
-                    {item.location_name || ""}
-                  </h3>
+          <span
+            className={`rounded-full px-2 py-1 ${
+              item.is_active
+                ? "bg-green-50 text-green-700"
+                : "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {item.is_active ? "Active" : "Inactive"}
+          </span>
+        </div>
 
-                  {/* <p className="mt-1 break-all text-xs text-gray-500">
-                    {item.qr_code}
-                  </p> */}
+        <p
+          title={item.location_name || "N/A"}
+          className="mt-1 break-words text-xs text-gray-700"
+        >
+          Location: {item.location_name || "N/A"}
+        </p>
+      </div>
+    </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+    {/* ACTIONS */}
+    <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap">
+      <button
+        type="button"
+        onClick={() => setSelectedQR(item)}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
+      >
+        <QrCode size={15} />
+        Preview
+      </button>
 
-                    <span className="flex items-center gap-1">
-                      <Navigation size={13} />
-                      {item.latitude}, {item.longitude}
-                    </span>
+      <button
+        type="button"
+        onClick={() => handleDownloadQR(item)}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600"
+      >
+        <Download size={15} />
+        Download
+      </button>
 
-                    <span
-                      className={`rounded-full px-2 py-1 ${
-                        item.is_active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {item.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+      <button
+        type="button"
+        onClick={() => openEditModal(item)}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
+      >
+        <Pencil size={14} />
+        Edit
+      </button>
 
-              {/* ACTIONS */}
+      <button
+        type="button"
+        onClick={() => handleRegenerateQR(item)}
+        disabled={isRegenerating}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-orange-200 px-3 py-2 text-xs font-medium text-orange-600 hover:bg-orange-50 disabled:opacity-50"
+      >
+        <RotateCw size={14} />
+        Regenerate
+      </button>
 
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedQR(item)}
-                  className="flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
-                >
-                  <QrCode size={15} />
-                  Preview
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleDownloadQR(item)}
-                  className="flex items-center justify-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600"
-                >
-                  <Download size={15} />
-                  Download
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openEditModal(item)}
-                  className="flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
-                >
-                  <Pencil size={14} />
-                  Edit
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleToggleActive(item)}
-                  className="flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
-                >
-                  <Power size={14} />
-                  {item.is_active ? "Deactivate" : "Activate"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleRegenerateQR(item)}
-                  disabled={isRegenerating}
-                  className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-orange-200 px-3 py-2 text-xs font-medium text-orange-600 hover:bg-orange-50 disabled:opacity-50 sm:col-span-1"
-                >
-                  <RotateCw size={14} />
-                  Regenerate
-                </button>
-
-              </div>
-            </div>
-          ))}
+      <button
+        type="button"
+        onClick={() => handleDeleteClick(item)}
+        className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+      >
+        <Trash2 size={14} />
+        Delete
+      </button>
+    </div>
+  </div>
+))}
 
           {/* EMPTY STATE */}
 
@@ -662,11 +801,11 @@ const [search, setSearch] = useState(
             <div className="flex items-center justify-between border-b p-4">
               <div>
                 <h3 className="font-semibold text-gray-800">
-                  Edit Location
+                  Edit 
                 </h3>
 
                 <p className="mt-1 text-xs text-gray-500">
-                  Update location details without changing its QR token.
+                  Update location details without changing its QR.
                 </p>
               </div>
 
@@ -685,6 +824,48 @@ const [search, setSearch] = useState(
               onSubmit={handleUpdateQR}
               className="space-y-4 p-4"
             >
+
+              {/* STATIC QR IMAGE PREVIEW - NOT EDITABLE */}
+              <div className="rounded-lg border bg-gray-50 p-3">
+                <label className="mb-2 block text-xs font-medium text-gray-700">
+                  Existing QR Code
+                </label>
+                {editingQR.qr_image ? (
+                  <img
+                    src={getImageUrl(editingQR.qr_image)}
+                    alt={`QR for ${editingQR.location_name || "Location"}`}
+                    className="mx-auto h-36 w-36 object-contain"
+                  />
+                ) : (
+                  <p className="py-6 text-center text-xs text-gray-500">
+                    QR image is not available.
+                  </p>
+                )}
+                <p className="mt-2 text-center text-[11px] text-gray-500">
+                  This QR image is fixed and cannot be changed from this form.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Police Station *
+                </label>
+                <select
+                  value={editForm.police_station_id}
+                  onChange={(e) =>
+                    handleEditChange("police_station_id", e.target.value)
+                  }
+                  required
+                  className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-red-400"
+                >
+                  <option value="">Select police station</option>
+                  {stations.map((station) => (
+                    <option key={station.id} value={station.id}>
+                      {station.station_name}{station.district ? ` - ${station.district}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
@@ -835,9 +1016,15 @@ const [search, setSearch] = useState(
                 </p>
               )}
 
-              <h4 className="font-semibold text-gray-800">
-                {selectedQR.location_name || ""}
+              <h4 className="break-words font-semibold text-gray-800">
+                {selectedQR.location_name || "Unnamed Location"}
               </h4>
+              <p
+                title={selectedQR.station_name || "Police station not available"}
+                className="whitespace-normal break-words text-sm text-gray-500"
+              >
+                {selectedQR.station_name || "N/A"}
+              </p>
 
               {/* <p className="break-all text-xs text-gray-500">
                 {selectedQR.qr_code}
@@ -857,7 +1044,15 @@ const [search, setSearch] = useState(
           </div>
         </div>
       )}
-
+<DeleteAlertModal
+  open={Boolean(deleteTarget)}
+  onClose={closeDeleteModal}
+  onConfirm={handleConfirmDelete}
+  isDeleting={isDeleting}
+  itemName={
+    deleteTarget?.location_name || "N/A"
+  }
+/>
     </div>
   );
 }

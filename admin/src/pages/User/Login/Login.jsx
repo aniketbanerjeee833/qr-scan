@@ -1,4 +1,5 @@
 
+
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { User, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
@@ -137,38 +138,40 @@ export default function Login() {
   };
 
   return (
-    <div className="fixed inset-0 h-dvh w-full overflow-hidden bg-white">
-      <div className="grid h-full w-full grid-cols-1 sm:grid-cols-12">
+    <div className="fixed inset-0 h-screen h-dvh w-full overflow-hidden bg-white">
+      <div className="grid h-full min-h-0 w-full grid-cols-1 sm:grid-cols-2">
 
-        {/* LEFT PANEL - FULL POLICE TRAINING PHOTO */}
-        <div className="relative hidden h-full overflow-hidden sm:col-span-6 sm:block">
+        {/* LEFT PANEL - QR LOCATION SCANNING IMAGE */}
+        <div className="relative hidden min-h-0 h-full overflow-hidden bg-green-950 sm:block">
           <img
-            src="/assets/images/police-training-left-panel.png"
-            alt="Indian police trainees during training"
-            className="absolute inset-0 h-full w-full object-cover object-center"
+            src="/assets/images/qr-location-scan-left-panel.png"
+            alt="Police officer scanning a QR code at a mapped location"
+            className="absolute inset-0 block h-full min-h-0 w-full max-w-full"
           />
 
-          {/* Subtle overlay for a professional appearance */}
-          <div className="absolute inset-0 bg-gradient-to-t from-green-950/25 via-transparent to-red-900/10" />
+          {/* Subtle overlay matching the green and red theme */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-green-950/30 via-transparent to-red-900/10" />
         </div>
+        
+
 
         {/* RIGHT PANEL - LOGIN */}
-        <div className="col-span-1 flex h-full items-center justify-center overflow-y-auto bg-white px-5 py-5 sm:col-span-6 sm:px-10 lg:px-16">
+        <div className="flex min-h-0 h-full items-center justify-center overflow-x-hidden overflow-y-auto bg-white px-5 py-6 sm:px-8 md:px-10 lg:px-16">
 
-          <div className="w-full max-w-md">
+          <div className="my-auto w-full max-w-md py-4">
 
             {/* Login heading */}
-            <div className="mb-9 text-center">
+            <div className="mb-8 text-center">
               <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50 text-green-800">
                 <ShieldCheck size={30} strokeWidth={1.8} />
               </div>
 
               <h1 className="text-3xl font-bold tracking-tight text-green-900">
-                Login
+                Welcome Back
               </h1>
 
               <p className="mt-2 text-sm text-gray-500">
-                Sign in to access the Police Training portal
+                Sign in to continue
               </p>
 
               <div className="mx-auto mt-5 h-1 w-16 rounded-full bg-red-600" />

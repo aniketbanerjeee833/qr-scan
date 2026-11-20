@@ -1,5 +1,32 @@
-
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+
+// Saves a blob as a file download in the browser.
+const saveBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+};
+
+// Success -> Blob (the Excel file).
+// Error   -> parsed JSON, so error.data.error works like every other endpoint.
+const excelResponseHandler = async (response) => {
+  if (response.ok) return response.blob();
+
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text || "Failed to download report" };
+  }
+};
 
 export const policeStationApi = createApi({
   reducerPath: "policeStationApi",
@@ -131,6 +158,68 @@ export const policeStationApi = createApi({
         { type: "PoliceStation", id: "LIST" },
       ],
     }),
+// Day-wise visit report of one officer (for the expandable table)
+getOfficerVisitReport: builder.query({
+  query: ({ stationId, officerId, from, to }) => ({
+    url: `admin/police-stations/${stationId}/officers/${officerId}/visit-report`,
+    method: "GET",
+    params: {
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+    },
+  }),
+}),
+    // ========================================
+    // EXCEL REPORTS (file download)
+    // ========================================
+
+    // All officers of one station
+    downloadStationReport: builder.mutation({
+      async queryFn(
+        { stationId, from, to, filename },
+        _api,
+        _extraOptions,
+        baseQuery
+      ) {
+        const result = await baseQuery({
+          url: `admin/police-stations/${stationId}/report`,
+          method: "GET",
+          params: { from, to },
+          cache: "no-cache",
+          responseHandler: excelResponseHandler,
+        });
+
+        if (result.error) return { error: result.error };
+
+        saveBlob(result.data, filename || "station-report.xlsx");
+
+        return { data: { success: true } };
+      },
+    }),
+
+    // One officer
+    downloadOfficerReport: builder.mutation({
+      async queryFn(
+        { stationId, officerId, from, to, filename },
+        _api,
+        _extraOptions,
+        baseQuery
+      ) {
+        const result = await baseQuery({
+          url: `admin/police-stations/${stationId}/officers/${officerId}/report`,
+          method: "GET",
+          params: { from, to },
+          cache: "no-cache",
+          responseHandler: excelResponseHandler,
+        });
+
+        if (result.error) return { error: result.error };
+
+        saveBlob(result.data, filename || "officer-report.xlsx");
+
+        return { data: { success: true } };
+      },
+    }),
   }),
 });
 
@@ -147,4 +236,8 @@ export const {
   useLazyGetStationOfficersQuery,
   useUpdateStationOfficerMutation,
   useDeleteStationOfficerMutation,
+  useGetOfficerVisitReportQuery,
+  // Excel reports
+  useDownloadStationReportMutation,
+  useDownloadOfficerReportMutation,
 } = policeStationApi;

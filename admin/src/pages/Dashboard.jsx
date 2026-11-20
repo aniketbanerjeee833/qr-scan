@@ -5,6 +5,7 @@ import React, {
   useState,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "react-toastify";
 
 import VirtualList from "../components/common/VirtualList";
 
@@ -19,9 +20,14 @@ import {
   X,
   Eye,
   ExternalLink,
+  FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 
-import { useLazyGetOfficerVisitsQuery } from "@/redux/api/officerVisitApi";
+import {
+  useLazyGetOfficerVisitsQuery,
+  useDownloadOfficerVisitsReportMutation,
+} from "@/redux/api/officerVisitApi";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 400;
@@ -74,6 +80,16 @@ const formatTime = (date) => {
   });
 };
 
+const formatCoordinate = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "N/A";
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number.toFixed(6) : "N/A";
+};
+
 // ============================================
 // DASHBOARD
 // ============================================
@@ -108,6 +124,9 @@ export default function Dashboard() {
   // RTK Query
   const [getOfficerVisits, { isLoading }] =
     useLazyGetOfficerVisitsQuery();
+
+  const [downloadReport, { isLoading: isDownloading }] =
+    useDownloadOfficerVisitsReportMutation();
 
   // Request management
   const requestGenerationRef = useRef(0);
@@ -303,6 +322,32 @@ export default function Dashboard() {
     urlSearch === "" && urlDate === getTodayDate();
 
   // ==========================================
+  // DOWNLOAD EXCEL REPORT
+  // Uses the APPLIED filters (URL), so the file
+  // always matches what the table is showing.
+  // ==========================================
+
+  const handleDownloadReport = async () => {
+    try {
+      await downloadReport({
+        search: urlSearch,
+        visit_date: urlDate,
+        filename: `officer_visits_${urlDate}.xlsx`,
+      }).unwrap();
+
+      toast.success("Report downloaded.");
+    } catch (err) {
+      console.error("Download officer visits report:", err);
+
+      toast.error(
+        err?.data?.error ||
+          err?.data?.message ||
+          "Failed to download report."
+      );
+    }
+  };
+
+  // ==========================================
   // CLOSE MODAL WITH ESCAPE
   // ==========================================
 
@@ -335,7 +380,7 @@ export default function Dashboard() {
           border-b border-gray-100 p-3
           transition hover:bg-gray-50
           sm:grid-cols-2
-          md:grid-cols-[55px_1.2fr_1fr_1fr_1fr_90px]
+          md:grid-cols-[55px_1.2fr_1fr_1fr_1fr_1fr_90px]
           md:items-center md:gap-3 md:p-3
         "
       >
@@ -347,12 +392,30 @@ export default function Dashboard() {
 
         {/* POLICE STATION */}
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-gray-800">
-            {visit.station_name || ""}
+          <p
+            title={visit.station_name || "N/A"}
+            className="whitespace-normal break-words text-sm font-semibold text-gray-800"
+          >
+            {visit.station_name || "N/A"}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p
+            title={visit.district || ""}
+            className="mt-1 whitespace-normal break-words text-xs text-gray-500"
+          >
             {visit.district || ""}
+          </p>
+        </div>
+
+        {/* OFFICER NAME */}
+        <div className="min-w-0">
+          <p className="text-xs text-gray-500 md:hidden">Officer Name</p>
+
+          <p
+            title={visit.officer_name || "N/A"}
+            className="whitespace-normal break-words text-sm font-medium text-gray-800"
+          >
+            {visit.officer_name || "N/A"}
           </p>
         </div>
 
@@ -360,7 +423,10 @@ export default function Dashboard() {
         <div className="min-w-0">
           <p className="text-xs text-gray-500 md:hidden">Location</p>
 
-          <p className="truncate text-sm text-gray-700">
+          <p
+            title={visit.location_name || "N/A"}
+            className="whitespace-normal break-words text-sm text-gray-700"
+          >
             {visit.location_name || "N/A"}
           </p>
         </div>
@@ -371,12 +437,18 @@ export default function Dashboard() {
             GPS Coordinates
           </p>
 
-          <p className="text-xs text-gray-600">
-            Lat: {visit.latitude ?? "N/A"}
+          <p
+            title={`Latitude: ${formatCoordinate(visit.latitude)}`}
+            className="break-all text-xs text-gray-600"
+          >
+            Lat: {formatCoordinate(visit.latitude)}
           </p>
 
-          <p className="mt-1 text-xs text-gray-600">
-            Long: {visit.longitude ?? "N/A"}
+          <p
+            title={`Longitude: ${formatCoordinate(visit.longitude)}`}
+            className="mt-1 break-all text-xs text-gray-600"
+          >
+            Long: {formatCoordinate(visit.longitude)}
           </p>
         </div>
 
@@ -384,11 +456,17 @@ export default function Dashboard() {
         <div>
           <p className="text-xs text-gray-500 md:hidden">Visit Time</p>
 
-          <p className="text-sm text-gray-700">
+          <p
+            title={formatDate(visit.visited_at)}
+            className="text-sm text-gray-700"
+          >
             {formatDate(visit.visited_at)}
           </p>
 
-          <p className="mt-1 text-xs text-gray-500">
+          <p
+            title={formatTime(visit.visited_at)}
+            className="mt-1 text-xs text-gray-500"
+          >
             {formatTime(visit.visited_at)}
           </p>
         </div>
@@ -397,6 +475,7 @@ export default function Dashboard() {
         <div>
           <button
             type="button"
+            title="View officer visit details"
             onClick={() => setSelectedVisit(visit)}
             className="
               flex items-center justify-center gap-1.5
@@ -440,8 +519,8 @@ export default function Dashboard() {
     <>
       <div
         className="
-          flex h-[calc(100dvh-64px)]
-          min-h-0 flex-col
+          flex h-full max-h-full w-full
+          min-h-0 min-w-0 flex-col
           gap-4 overflow-hidden
           bg-gray-50 p-3 md:p-5
         "
@@ -498,19 +577,14 @@ export default function Dashboard() {
 
         <div
           className="
-            flex min-h-0 flex-1 flex-col
+            flex min-h-0 min-w-0 flex-1 flex-col
             overflow-hidden rounded-xl
             border border-gray-200 bg-white shadow-sm
           "
         >
           {/* CARD HEADER */}
           <div className="shrink-0 border-b p-4">
-            <div
-              className="
-                mb-3 flex flex-wrap
-                items-center justify-between gap-2
-              "
-            >
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">
                   Officer Visit History
@@ -520,26 +594,13 @@ export default function Dashboard() {
                   View and search all officer visits.
                 </p>
               </div>
-
-              {/* <span
-                className="
-                  rounded-full bg-red-50
-                  px-2.5 py-1 text-xs
-                  font-medium text-red-600
-                "
-              >
-                {visits.length} loaded
-              </span> */}
             </div>
 
-            {/* ================================== */}
-            {/* SEARCH AND FILTERS (single aligned row) */}
-            {/* ================================== */}
-
+            {/* SEARCH, DATE, RESET, DOWNLOAD */}
             <div
               className="
                 grid grid-cols-1 gap-3
-                sm:grid-cols-[1fr_180px_auto]
+                sm:grid-cols-[1fr_180px_auto_auto]
                 sm:items-end
               "
             >
@@ -555,10 +616,7 @@ export default function Dashboard() {
                 <div className="relative">
                   <Search
                     size={15}
-                    className="
-                      pointer-events-none absolute left-3 top-1/2
-                      -translate-y-1/2 text-gray-400
-                    "
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   />
 
                   <input
@@ -621,8 +679,37 @@ export default function Dashboard() {
                     sm:w-auto
                   "
                 >
-                  <X size={14} />
+                  <RefreshCw size={15} />
                   Reset
+                </button>
+              </div>
+
+              {/* DOWNLOAD EXCEL */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleDownloadReport}
+                  disabled={isDownloading || isLoading || visits.length === 0}
+                  title={
+                    visits.length === 0
+                      ? "No visits to export for the selected filters"
+                      : "Download Excel report for the selected date and search"
+                  }
+                  className="
+                    flex h-9 w-full items-center justify-center gap-1.5
+                    rounded-lg bg-green-600
+                    px-4 text-xs font-medium text-white
+                    transition hover:bg-green-700
+                    disabled:cursor-not-allowed disabled:opacity-50
+                    sm:w-auto
+                  "
+                >
+                  {isDownloading ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <FileSpreadsheet size={15} />
+                  )}
+                  Excel Report
                 </button>
               </div>
             </div>
@@ -635,7 +722,7 @@ export default function Dashboard() {
           <div
             className="
               hidden shrink-0
-              grid-cols-[55px_1.2fr_1fr_1fr_1fr_90px]
+              grid-cols-[55px_1.2fr_1fr_1fr_1fr_1fr_90px]
               gap-3 border-b bg-gray-50
               px-4 py-3
               text-[11px] font-semibold
@@ -645,6 +732,7 @@ export default function Dashboard() {
           >
             <div>Sl.No.</div>
             <div>Police Station</div>
+            <div>Officer Name</div>
             <div>Location</div>
             <div>GPS</div>
             <div>Time</div>
@@ -655,14 +743,9 @@ export default function Dashboard() {
           {/* VIRTUAL LIST */}
           {/* ================================== */}
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {isLoading && visits.length === 0 ? (
-              <div
-                className="
-                  flex h-full items-center
-                  justify-center text-sm text-gray-500
-                "
-              >
+              <div className="flex h-full items-center justify-center text-sm text-gray-500">
                 <span className="loading loading-spinner loading-md mr-2" />
                 Loading officer visits...
               </div>
@@ -679,7 +762,7 @@ export default function Dashboard() {
                 endThreshold={5}
                 emptyMessage="No officer visits found."
                 loadingText="Loading more officer visits..."
-                className="h-full"
+                className="h-full overscroll-contain"
               />
             )}
           </div>
@@ -720,13 +803,7 @@ export default function Dashboard() {
           {/* ================================== */}
 
           {!isLoading && visits.length > 0 && !hasMore && (
-            <div
-              className="
-                shrink-0 border-t bg-gray-50
-                px-4 py-2.5 text-center
-                text-xs text-gray-500
-              "
-            >
+            <div className="shrink-0 border-t bg-gray-50 px-4 py-2.5 text-center text-xs text-gray-500">
               All officer visit records loaded.
             </div>
           )}
@@ -739,11 +816,7 @@ export default function Dashboard() {
 
       {selectedVisit && (
         <div
-          className="
-            fixed inset-0 z-50
-            flex items-center justify-center
-            bg-black/50 p-3
-          "
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
           onClick={() => setSelectedVisit(null)}
         >
           <div
@@ -755,30 +828,15 @@ export default function Dashboard() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* MODAL HEADER */}
-            <div
-              className="
-                flex shrink-0 items-center
-                justify-between border-b
-                px-5 py-4
-              "
-            >
-              <div>
-                <h2 className="text-base font-semibold text-gray-800">
-                  Officer Visit Details
-                </h2>
-{/* 
-                <p className="mt-1 text-xs text-gray-500">
-                  Visit #{selectedVisit.id}
-                </p> */}
-              </div>
+            <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
+              <h2 className="text-base font-semibold text-gray-800">
+                Officer Visit Details
+              </h2>
 
               <button
                 type="button"
                 onClick={() => setSelectedVisit(null)}
-                className="
-                  rounded-lg p-2 text-gray-500
-                  transition hover:bg-gray-100
-                "
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100"
                 aria-label="Close details"
               >
                 <X size={19} />
@@ -804,11 +862,7 @@ export default function Dashboard() {
                       <img
                         src={imageUrl}
                         alt="Officer selfie"
-                        className="
-                          h-48 w-full rounded-lg
-                          border border-gray-200
-                          bg-gray-50 object-cover
-                        "
+                        className="h-48 w-full rounded-lg border border-gray-200 bg-gray-50 object-cover"
                       />
 
                       <span className="mt-2 flex items-center gap-1 text-xs text-red-600">
@@ -817,13 +871,7 @@ export default function Dashboard() {
                       </span>
                     </a>
                   ) : (
-                    <div
-                      className="
-                        flex h-48 items-center
-                        justify-center rounded-lg
-                        border bg-gray-50 text-gray-400
-                      "
-                    >
+                    <div className="flex h-48 items-center justify-center rounded-lg border bg-gray-50 text-gray-400">
                       <div className="text-center">
                         <Camera size={30} className="mx-auto mb-2" />
                         <p className="text-xs">No image available</p>
@@ -832,67 +880,83 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {/* VISIT INFORMATION */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs text-gray-500">Police Station</p>
-                    <p className="mt-1 text-sm font-medium text-gray-800">
-                      {selectedVisit.station_name || "N/A"}
-                    </p>
+                {/* OFFICER + STATION DETAILS */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Officer Details
+                    </h3>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Officer Name</p>
+                      <p className="mt-1 break-words text-sm font-medium text-gray-800">
+                        {selectedVisit.officer_name || "N/A"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Phone Number</p>
+                      <p className="mt-1 text-sm text-gray-800">
+                        {selectedVisit.officer_phone || "N/A"}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs text-gray-500">District</p>
-                    <p className="mt-1 text-sm text-gray-800">
-                      {selectedVisit.district || "N/A"}
-                    </p>
-                  </div>
+                  <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Station Details
+                    </h3>
 
-                  <div>
-                    <p className="text-xs text-gray-500">Location Name</p>
-                    <p className="mt-1 text-sm text-gray-800">
-                      {selectedVisit.location_name || "N/A"}
-                    </p>
-                  </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Police Station</p>
+                      <p className="mt-1 break-words text-sm font-medium text-gray-800">
+                        {selectedVisit.station_name || "N/A"}
+                      </p>
+                    </div>
 
-                  {/* <div>
-                    <p className="text-xs text-gray-500">Location QR ID</p>
-                    <p className="mt-1 text-sm text-gray-800">
-                      {selectedVisit.location_qr_id ?? "N/A"}
-                    </p>
+                    <div>
+                      <p className="text-xs text-gray-500">District</p>
+                      <p className="mt-1 break-words text-sm text-gray-800">
+                        {selectedVisit.district || "N/A"}
+                      </p>
+                    </div>
                   </div>
-
-                  <div>
-                    <p className="text-xs text-gray-500">QR Code</p>
-                    <p className="mt-1 break-all text-sm text-gray-800">
-                      {selectedVisit.qr_code || "N/A"}
-                    </p>
-                  </div> */}
                 </div>
               </div>
 
-              {/* GPS DETAILS */}
+              {/* GPS COORDINATES + LOCATION */}
               <div className="mt-6 rounded-lg border border-gray-200 p-4">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex items-center gap-2">
                   <Navigation size={16} className="text-red-500" />
 
                   <h3 className="text-sm font-semibold text-gray-800">
-                    GPS Coordinates
+                    GPS Coordinates & Location
                   </h3>
+                </div>
+
+                <div className="mb-4 border-b border-gray-100 pb-4">
+                  <p className="text-xs text-gray-500">Location Name</p>
+
+                  <p
+                    title={selectedVisit.location_name || "N/A"}
+                    className="mt-1 break-words text-sm font-medium text-gray-800"
+                  >
+                    {selectedVisit.location_name || "N/A"}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-gray-500">Latitude</p>
                     <p className="mt-1 break-all text-sm text-gray-800">
-                      {selectedVisit.latitude ?? "N/A"}
+                      {formatCoordinate(selectedVisit.latitude)}
                     </p>
                   </div>
 
                   <div>
                     <p className="text-xs text-gray-500">Longitude</p>
                     <p className="mt-1 break-all text-sm text-gray-800">
-                      {selectedVisit.longitude ?? "N/A"}
+                      {formatCoordinate(selectedVisit.longitude)}
                     </p>
                   </div>
                 </div>
@@ -902,6 +966,7 @@ export default function Dashboard() {
                     href={mapsUrl}
                     target="_blank"
                     rel="noreferrer"
+                    title="View this visit location on Google Maps"
                     className="
                       mt-4 inline-flex items-center gap-2
                       rounded-lg bg-red-50 px-3 py-2
