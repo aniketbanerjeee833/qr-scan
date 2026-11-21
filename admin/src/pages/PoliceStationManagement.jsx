@@ -3,6 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import DeleteAlertModal from "@/components/Modal/DeleteAlertModal";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
 import {
   useCreatePoliceStationMutation,
   useGetPoliceStationsQuery,
@@ -135,13 +139,13 @@ function OfficerReportPanel({ stationId, officerId, from, to }) {
               "Failed to load visit report."}
           </p>
 
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={refetch}
             className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-100"
           >
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
@@ -921,7 +925,7 @@ export default function PoliceStationManagement() {
           </div>
         </div>
 
-        <button
+        <Button variant="outline" size="sm"
           type="button"
           onClick={handleRefresh}
           disabled={isFetchingStations || officerLoading}
@@ -936,7 +940,7 @@ export default function PoliceStationManagement() {
             }
           />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* TWO COLUMN LAYOUT */}
@@ -960,14 +964,14 @@ export default function PoliceStationManagement() {
                 </p>
               </div>
 
-              <button
+              <Button variant="default" size="sm"
                 type="button"
                 onClick={openAddStation}
                 className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600"
               >
                 <Plus size={15} />
                 Add Station
-              </button>
+              </Button>
             </div>
 
             {/* Station search */}
@@ -977,7 +981,7 @@ export default function PoliceStationManagement() {
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
 
-              <input
+              <Input
                 type="text"
                 value={stationSearchInput}
                 onChange={(e) => setStationSearchInput(e.target.value)}
@@ -986,14 +990,14 @@ export default function PoliceStationManagement() {
               />
 
               {stationSearchInput ? (
-                <button
+                <Button variant="ghost" size="icon-sm"
                   type="button"
                   onClick={clearStationSearch}
                   aria-label="Clear station search"
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 >
                   <X size={14} />
-                </button>
+                </Button>
               ) : isFetchingStations ? (
                 <Loader2
                   size={14}
@@ -1036,7 +1040,7 @@ export default function PoliceStationManagement() {
                 Number(selectedStationId) === Number(station.id);
 
               return (
-                <button
+                <Button variant="ghost" size="default"
                   type="button"
                   key={station.id}
                   onClick={() => {
@@ -1047,13 +1051,13 @@ export default function PoliceStationManagement() {
                       setReportTo("");
                     }
                   }}
-                  className={`w-full border-l-4 p-4 text-left transition ${
+                  className={`!h-auto min-h-[76px] w-full justify-start whitespace-normal border-l-4 p-4 text-left transition ${
                     isSelected
                       ? "border-red-500 bg-red-50"
                       : "border-transparent hover:bg-gray-50"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex w-full min-w-0 items-start justify-between gap-2">
                     <div className="flex min-w-0 items-start gap-3">
                       <div
                         className={`rounded-lg p-2 ${
@@ -1065,7 +1069,7 @@ export default function PoliceStationManagement() {
                         <Building2 size={19} />
                       </div>
 
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p
                           title={station.station_name || "Police Station"}
                           className="line-clamp-2 break-words text-sm font-semibold leading-5 text-gray-800"
@@ -1105,7 +1109,7 @@ export default function PoliceStationManagement() {
                       }`}
                     />
                   </div>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1155,23 +1159,23 @@ export default function PoliceStationManagement() {
                   </div>
 
                   <div className="flex shrink-0 flex-nowrap gap-2">
-                    <button
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => openEditStation(selectedStation)}
-                      className="flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                     >
                       <Pencil size={14} />
                       Edit Station
-                    </button>
+                    </Button>
 
-                    <button
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => handleDeleteStation(selectedStation)}
-                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
                     >
                       <Trash2 size={14} />
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1190,7 +1194,7 @@ export default function PoliceStationManagement() {
                     </p>
                   </div>
 
-                  <button
+                  <Button variant="default" size="sm"
                     type="button"
                     onClick={openAddOfficer}
                     disabled={Number(selectedStation.is_active) !== 1}
@@ -1198,20 +1202,20 @@ export default function PoliceStationManagement() {
                   >
                     <Plus size={15} />
                     Add Officer
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="grid grid-cols-[minmax(150px,1fr)_138px_138px_auto] items-end gap-2 overflow-x-auto">
                   <div className="min-w-[150px]">
-                    <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    <Label className="mb-1 block text-[11px] font-medium text-gray-600">
                       Search Officer
-                    </label>
+                    </Label>
                     <div className="relative">
                       <Search
                         size={15}
                         className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                       />
-                      <input
+                      <Input
                         type="text"
                         value={officerSearch}
                         onChange={(e) => setOfficerSearch(e.target.value)}
@@ -1222,13 +1226,13 @@ export default function PoliceStationManagement() {
                   </div>
 
                   <div>
-                    <label
+                    <Label
                       htmlFor="report-from"
                       className="mb-1 block text-[11px] font-medium text-gray-600"
                     >
                       From Date
-                    </label>
-                    <input
+                    </Label>
+                    <Input
                       id="report-from"
                       type="date"
                       value={reportFrom}
@@ -1239,13 +1243,13 @@ export default function PoliceStationManagement() {
                   </div>
 
                   <div>
-                    <label
+                    <Label
                       htmlFor="report-to"
                       className="mb-1 block text-[11px] font-medium text-gray-600"
                     >
                       To Date
-                    </label>
-                    <input
+                    </Label>
+                    <Input
                       id="report-to"
                       type="date"
                       value={reportTo}
@@ -1255,11 +1259,12 @@ export default function PoliceStationManagement() {
                     />
                   </div>
 
-                  <button
+                  <Button variant="outline" size="sm"
                     type="button"
                     onClick={() => handleDownloadReport()}
                     disabled={downloadingKey !== null}
-                    className="flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-green-600 px-3 text-xs font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap 
+                    rounded-lg bg-green-600 px-3 text-xs font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {downloadingKey === "station" ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -1267,7 +1272,7 @@ export default function PoliceStationManagement() {
                       <FileSpreadsheet size={14} />
                     )}
                     Excel Report
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -1324,7 +1329,7 @@ export default function PoliceStationManagement() {
                             className="flex flex-wrap gap-2"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={() => handleDownloadReport(officer)}
                               disabled={downloadingKey !== null}
@@ -1340,25 +1345,25 @@ export default function PoliceStationManagement() {
                                 <FileSpreadsheet size={14} />
                               )}
                               Report
-                            </button>
+                            </Button>
 
-                            <button
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={() => openEditOfficer(officer)}
-                              className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                              className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                             >
                               <Pencil size={14} />
                               Edit
-                            </button>
+                            </Button>
 
-                            <button
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={() => handleDeleteOfficer(officer)}
-                              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
                             >
                               <Trash2 size={14} />
                               Delete
-                            </button>
+                            </Button>
                           </div>
 
                           {/* Arrow at far right: clicks bubble up to the row */}
@@ -1429,14 +1434,14 @@ export default function PoliceStationManagement() {
               {officers.length > 0 && (
                 <div className="shrink-0 border-t bg-gray-50 p-4">
                   {officerHasMore ? (
-                    <button
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => loadOfficers(false)}
                       disabled={officerLoading}
                       className="w-full rounded-lg border bg-white py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                     >
                       {officerLoading ? "Loading..." : "Load More"}
-                    </button>
+                    </Button>
                   ) : (
                     <></>
                     // <p className="text-center text-xs text-gray-400">
@@ -1470,13 +1475,13 @@ export default function PoliceStationManagement() {
                 </p>
               </div>
 
-              <button
+              <Button variant="ghost" size="icon-sm"
                 type="button"
                 onClick={closeStationModal}
                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
                 <X size={20} />
-              </button>
+              </Button>
             </div>
 
             <form
@@ -1484,11 +1489,11 @@ export default function PoliceStationManagement() {
               className="space-y-4 p-4"
             >
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label className="mb-1 block text-xs font-medium text-gray-700">
                   Police Station Name *
-                </label>
+                </Label>
 
-                <input
+                <Input
                   type="text"
                   value={stationForm.station_name}
                   maxLength={150}
@@ -1508,11 +1513,11 @@ export default function PoliceStationManagement() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label className="mb-1 block text-xs font-medium text-gray-700">
                   District
-                </label>
+                </Label>
 
-                <input
+                <Input
                   type="text"
                   value={stationForm.district}
                   onChange={(e) =>
@@ -1527,15 +1532,15 @@ export default function PoliceStationManagement() {
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-4">
-                <button
+                <Button variant="ghost" size="icon-sm"
                   type="button"
                   onClick={closeStationModal}
                   className="rounded-lg border px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
                 >
                   Cancel
-                </button>
+                </Button>
 
-                <button
+                <Button variant="default" size="sm"
                   type="submit"
                   disabled={isCreatingStation || isUpdatingStation}
                   className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
@@ -1545,7 +1550,7 @@ export default function PoliceStationManagement() {
                   )}
 
                   {editingStation ? "Save Changes" : "Add Station"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1570,13 +1575,13 @@ export default function PoliceStationManagement() {
                 </p>
               </div>
 
-              <button
+              <Button variant="ghost" size="icon-sm"
                 type="button"
                 onClick={closeOfficerModal}
                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
                 <X size={20} />
-              </button>
+              </Button>
             </div>
 
             <form
@@ -1584,11 +1589,11 @@ export default function PoliceStationManagement() {
               className="space-y-4 p-4"
             >
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label className="mb-1 block text-xs font-medium text-gray-700">
                   Officer Name *
-                </label>
+                </Label>
 
-                <input
+                <Input
                   type="text"
                   value={officerForm.name}
                   maxLength={150}
@@ -1608,11 +1613,11 @@ export default function PoliceStationManagement() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label className="mb-1 block text-xs font-medium text-gray-700">
                   Phone Number
-                </label>
+                </Label>
 
-                <input
+                <Input
                   type="tel"
                   inputMode="numeric"
                   maxLength={10}
@@ -1631,15 +1636,15 @@ export default function PoliceStationManagement() {
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-4">
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={closeOfficerModal}
                   className="rounded-lg border px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
                 >
                   Cancel
-                </button>
+                </Button>
 
-                <button
+                <Button variant="default" size="sm"
                   type="submit"
                   disabled={isCreatingOfficer || isUpdatingOfficer}
                   className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
@@ -1649,7 +1654,7 @@ export default function PoliceStationManagement() {
                   )}
 
                   {editingOfficer ? "Save Changes" : "Add Officer"}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1671,4 +1676,4 @@ export default function PoliceStationManagement() {
       />
     </div>
   );
-}
+} 

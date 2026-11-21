@@ -1,27 +1,30 @@
-
-
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { User, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import {
+  User,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+} from "lucide-react";
 import { toast } from "react-toastify";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { useAdminLoginMutation } from "@/redux/api/userApi";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [blockedUntil, setBlockedUntil] = useState(null);
   const [countdownLeft, setCountdownLeft] = useState(0);
   const [duplicateLoginError, setDuplicateLoginError] = useState("");
-
+//const navigate=useNavigate()
   const [loginUser, { isLoading: isAdminLoginLoading }] =
     useAdminLoginMutation();
 
-  const {
-    register,
-    handleSubmit,
-  } = useForm();
+  const { register, handleSubmit } = useForm();
 
   // Restore login block after page refresh
   useEffect(() => {
@@ -90,12 +93,17 @@ export default function Login() {
         password: data.password,
       }).unwrap();
 
-      if (response?.success) {
-        toast.success("Login successful");
+      // if (response?.success) {
+      //   toast.success("Login successful");
 
-        // Redirect using href
-        window.location.href = "/dashboard";
-      }
+      //   // Redirect using href
+      //   window.location.href = "/dashboard";
+      //   // navigate("/dashboard")
+      // }
+      if (response?.success) {
+  toast.success("Login successful");
+  window.location.assign("/dashboard");
+}
     } catch (err) {
       console.error("Login error:", err);
 
@@ -140,9 +148,8 @@ export default function Login() {
   return (
     <div className="fixed inset-0 h-screen h-dvh w-full overflow-hidden bg-white">
       <div className="grid h-full min-h-0 w-full grid-cols-1 sm:grid-cols-2">
-
         {/* LEFT PANEL - QR LOCATION SCANNING IMAGE */}
-        <div className="relative hidden min-h-0 h-full overflow-hidden bg-green-950 sm:block">
+        <div className="relative hidden h-full min-h-0 overflow-hidden bg-green-950 sm:block">
           <img
             src="/assets/images/qr-location-scan-left-panel.png"
             alt="Police officer scanning a QR code at a mapped location"
@@ -152,14 +159,10 @@ export default function Login() {
           {/* Subtle overlay matching the green and red theme */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-green-950/30 via-transparent to-red-900/10" />
         </div>
-        
-
 
         {/* RIGHT PANEL - LOGIN */}
-        <div className="flex min-h-0 h-full items-center justify-center overflow-x-hidden overflow-y-auto bg-white px-5 py-6 sm:px-8 md:px-10 lg:px-16">
-
+        <div className="flex h-full min-h-0 items-center justify-center overflow-x-hidden overflow-y-auto bg-white px-5 py-6 sm:px-8 md:px-10 lg:px-16">
           <div className="my-auto w-full max-w-md py-4">
-
             {/* Login heading */}
             <div className="mb-8 text-center">
               <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50 text-green-800">
@@ -184,9 +187,9 @@ export default function Login() {
             >
               {/* Username */}
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">
+                <Label className="text-sm font-medium text-gray-700">
                   Username
-                </label>
+                </Label>
 
                 <div className="relative">
                   <User
@@ -207,9 +210,9 @@ export default function Login() {
 
               {/* Password */}
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium text-gray-700">
+                <Label className="text-sm font-medium text-gray-700">
                   Password
-                </label>
+                </Label>
 
                 <div className="relative">
                   <Lock
@@ -226,24 +229,29 @@ export default function Login() {
                     className="h-12 rounded-xl border-gray-300 bg-gray-50 pl-11 pr-12 text-sm focus-visible:ring-green-600"
                   />
 
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-green-800"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 text-gray-400 hover:bg-transparent hover:text-green-800"
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                   >
                     {showPassword ? (
                       <EyeOff size={19} />
                     ) : (
                       <Eye size={19} />
                     )}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Login button */}
               <Button
                 type="submit"
+                variant="default"
                 disabled={
                   isAdminLoginLoading ||
                   Boolean(duplicateLoginError) ||
@@ -284,7 +292,7 @@ export default function Login() {
             {/* Footer */}
             <div className="mt-10 border-t border-gray-100 pt-5 text-center">
               <p className="text-xs text-gray-400">
-                Designed & developed by{" "}
+                Designed &amp; developed by{" "}
                 <a
                   href="https://techpromind.com/"
                   target="_blank"
@@ -299,7 +307,6 @@ export default function Login() {
                 Support: +91 99036 34360 · Mon–Fri, 11am–6pm
               </p>
             </div>
-
           </div>
         </div>
       </div>

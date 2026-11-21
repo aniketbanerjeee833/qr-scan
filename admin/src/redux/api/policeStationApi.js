@@ -32,7 +32,8 @@ export const policeStationApi = createApi({
   reducerPath: "policeStationApi",
 
   baseQuery: fetchBaseQuery({
-    baseUrl: "http://localhost:4000/api/",
+    //baseUrl: "http://localhost:4000/api/",
+    baseUrl: "https://036c-115-187-48-18.ngrok-free.app/api/",
     credentials: "include",
   }),
 

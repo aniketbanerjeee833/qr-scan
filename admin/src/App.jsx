@@ -17,12 +17,11 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 
 
 
- const LeaveManagement = lazy(() => import("./pages/LeaveManagement"));
+//  const LeaveManagement = lazy(() => import("./pages/LeaveManagement"));
  const LocationQRManagement= lazy(() => import("./pages/LocationQRManagement"));
  const PoliceStationManagement= lazy(() => import("./pages/PoliceStationManagement"));
  const CreateLocationQR= lazy(() => import("./pages/CreateLocationQR"));
- const Database = lazy(() => import("./pages/Database"));
-  const UploadPersonnel = lazy(() => import("./pages/Upload"));
+ 
 // import all your components...
 // (SliderImage, TagText, etc.)
 
@@ -49,17 +48,30 @@ export default function RouterWrapper() {
   const [loading, setLoading] = useState(true);
 console.log("Browser path:", window.location.pathname);
   // ✅ Call backend to check session
-  useEffect(() => {
-    fetch("http://localhost:4000/api/admin/me", {
+ useEffect(() => {
+  fetch(
+    "https://036c-115-187-48-18.ngrok-free.app/api/admin/me",
+    {
       credentials: "include",
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+      },
+    }
+  )
+    .then(async (res) => {
+      const data = await res.json();
+
+      console.log("ME STATUS:", res.status);
+      console.log("ME RESPONSE:", data);
+
+      setUser(data.user || null);
     })
-      .then((res) => res.json())
-      .then((data) => {
-        setUser(data.user || null);
-      })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
-  }, []);
+    .catch((err) => {
+      console.error("ME ERROR:", err);
+      setUser(null);
+    })
+    .finally(() => setLoading(false));
+}, []);
 
   return (
      <BrowserRouter>
@@ -113,12 +125,11 @@ console.log("Browser path:", window.location.pathname);
       <Route index element={<Navigate to="/dashboard" replace />} />
 
       <Route path="dashboard" element={<Dashboard />} />
-      <Route path="leave" element={<LeaveManagement />} />
+      {/* <Route path="leave" element={<LeaveManagement />} /> */}
       <Route path="location-qrs" element={<LocationQRManagement />} />
       <Route path="location-qrs/create" element={<CreateLocationQR />} />
       <Route path="police-stations" element={<PoliceStationManagement/>} />
-      <Route path="database" element={<Database />} />
-      <Route path="upload" element={<UploadPersonnel />} />
+ 
     </Route>
   </Route>
 

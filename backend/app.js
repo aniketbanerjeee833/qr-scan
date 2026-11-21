@@ -38,6 +38,47 @@ import clearExpiredSessions from "./utils/clearExpiredSessions.js";
 
 
 const app = express();
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://192.168.0.114:5173",
+  "http://192.168.0.103:5173",
+
+  // Frontend ngrok URLs
+  "https://bc82-115-187-48-18.ngrok-free.app",
+  "https://e74e-115-187-48-18.ngrok-free.app",
+  
+"https://036c-115-187-48-18.ngrok-free.app"
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    console.log("CORS incoming origin:", origin);
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("CORS BLOCKED:", origin);
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "ngrok-skip-browser-warning",
+  ],
+
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+// Register CORS before routes
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const isProduction=false
@@ -144,34 +185,8 @@ app.use(cookieParser());
 // }));
 
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-  "http://192.168.0.114:5173",
-  //"http://192.168.29.2:5173",
-  "http://192.168.0.103:5173",
 
-  // Frontend ngrok URL
-  //"https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app",
-  "https://2f50-115-187-48-18.ngrok-free.app",
-];
 //22.474272015642285, 88.36488516878663 office
-app.use(cors({
-  origin: function (origin, callback) {
-    console.log("Incoming frontend origin:", origin);
-
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    console.log("Blocked CORS Origin:", origin);
-    return callback(new Error(`Not allowed by CORS: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  credentials: true,
-}));
 
 
 const __filename = fileURLToPath(import.meta.url);

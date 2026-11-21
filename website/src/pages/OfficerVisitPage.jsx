@@ -15,7 +15,7 @@ import { toast } from "react-toastify";
 // const API_URL = "http://192.168.29.2:4000/api/";
  //https://f781-115-187-48-18.ngrok-free.app -
 //const API_URL ="https://108f-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app/api/";
-const API_URL ="https://f781-115-187-48-18.ngrok-free.app/api/";
+const API_URL ="https://036c-115-187-48-18.ngrok-free.app/api/";
 const MAX_DISTANCE = 100;
 const MAX_ACCURACY = 100;
 
@@ -315,82 +315,86 @@ const OfficerVisitPage = () => {
 
   // Selfie selection: flip the captured selfie horizontally so that both
   // the preview and the uploaded file are saved in the unmirrored direction.
-  // const handleImageChange = (event) => {
-  //   const file = event.target.files?.[0];
 
-  //   if (!file) return;
 
-  //   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-  //     toast.error("Only JPG, PNG and WEBP images are allowed");
-  //     event.target.value = "";
-  //     return;
-  //   }
+// const handleImageChange = (event) => {
+//   const file = event.target.files?.[0];
 
-  //   if (file.size > 20 * 1024 * 1024) {
-  //     toast.error("Image must be smaller than 20 MB");
-  //     event.target.value = "";
-  //     return;
-  //   }
+//   if (!file) return;
 
-  //   const sourceUrl = URL.createObjectURL(file);
-  //   const sourceImage = new Image();
+//   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+//     toast.error("Only JPG, PNG and WEBP images are allowed");
+//     event.target.value = "";
+//     return;
+//   }
 
-  //   sourceImage.onload = () => {
-  //     try {
-  //       const canvas = document.createElement("canvas");
-  //       canvas.width = sourceImage.naturalWidth;
-  //       canvas.height = sourceImage.naturalHeight;
+//   if (file.size > 20 * 1024 * 1024) {
+//     toast.error("Image must be smaller than 20 MB");
+//     event.target.value = "";
+//     return;
+//   }
 
-  //       const context = canvas.getContext("2d");
-  //       if (!context) {
-  //         throw new Error("Unable to process the captured image");
-  //       }
+//   const sourceUrl = URL.createObjectURL(file);
+//   const sourceImage = new Image();
 
-  //       // Mirror horizontally once to correct the front-camera selfie.
-  //       context.translate(canvas.width, 0);
-  //       context.scale(-1, 1);
-  //       context.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+//   sourceImage.onload = () => {
+//     try {
+//       const canvas = document.createElement("canvas");
+//       canvas.width = sourceImage.naturalWidth;
+//       canvas.height = sourceImage.naturalHeight;
 
-  //       canvas.toBlob(
-  //         (blob) => {
-  //           URL.revokeObjectURL(sourceUrl);
+//       const context = canvas.getContext("2d");
 
-  //           if (!blob) {
-  //             toast.error("Unable to process the captured image");
-  //             event.target.value = "";
-  //             return;
-  //           }
+//       if (!context) {
+//         throw new Error("Unable to process the captured image");
+//       }
 
-  //           const correctedFile = new File(
-  //             [blob],
-  //             file.name || "officer-selfie.jpg",
-  //             {
-  //               type: file.type,
-  //               lastModified: Date.now(),
-  //             }
-  //           );
+//       // Correct the front-camera horizontal mirroring.
+//       context.translate(canvas.width, 0);
+//       context.scale(-1, 1);
+//       context.drawImage(sourceImage, 0, 0);
 
-  //           setImage(correctedFile);
-  //           setPreview(URL.createObjectURL(correctedFile));
-  //         },
-  //         file.type
-  //       );
-  //     } catch (error) {
-  //       URL.revokeObjectURL(sourceUrl);
-  //       toast.error(error.message || "Unable to process the captured image");
-  //       event.target.value = "";
-  //     }
-  //   };
+//       canvas.toBlob(
+//         (blob) => {
+//           URL.revokeObjectURL(sourceUrl);
 
-  //   sourceImage.onerror = () => {
-  //     URL.revokeObjectURL(sourceUrl);
-  //     toast.error("Unable to read the captured image");
-  //     event.target.value = "";
-  //   };
+//           if (!blob) {
+//             toast.error("Unable to process the captured image");
+//             event.target.value = "";
+//             return;
+//           }
 
-  //   sourceImage.src = sourceUrl;
-  // };
+//           // Store the corrected image, not the original mirrored file.
+//           const correctedFile = new File(
+//             [blob],
+//             "officer-selfie.jpg",
+//             {
+//               type: "image/jpeg",
+//               lastModified: Date.now(),
+//             }
+//           );
 
+//           setImage(correctedFile);
+//           setPreview(URL.createObjectURL(correctedFile));
+//         },
+//         "image/jpeg",
+//         0.92
+//       );
+//     } catch (error) {
+//       URL.revokeObjectURL(sourceUrl);
+//       toast.error(error.message || "Unable to process image");
+//       event.target.value = "";
+//     }
+//   };
+
+//   sourceImage.onerror = () => {
+//     URL.revokeObjectURL(sourceUrl);
+//     toast.error("Unable to read the captured image");
+//     event.target.value = "";
+//   };
+
+//   sourceImage.src = sourceUrl;
+// };
 const handleImageChange = (event) => {
   const file = event.target.files?.[0];
 
@@ -423,10 +427,14 @@ const handleImageChange = (event) => {
         throw new Error("Unable to process the captured image");
       }
 
-      // Correct the front-camera horizontal mirroring.
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
-      context.drawImage(sourceImage, 0, 0);
+      // Draw without horizontal flipping.
+      context.drawImage(
+        sourceImage,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
 
       canvas.toBlob(
         (blob) => {
@@ -438,7 +446,6 @@ const handleImageChange = (event) => {
             return;
           }
 
-          // Store the corrected image, not the original mirrored file.
           const correctedFile = new File(
             [blob],
             "officer-selfie.jpg",
@@ -469,7 +476,6 @@ const handleImageChange = (event) => {
 
   sourceImage.src = sourceUrl;
 };
-
 
   // Submit officer visit
   const handleSubmit = async (event) => {

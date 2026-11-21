@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -8,12 +9,27 @@ import {
   Loader2,
   Building2,
 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 import {
   useCreateLocationQRMutation,
 } from "@/redux/api/locationQRApi";
+
 import {
   useGetPoliceStationsQuery,
 } from "@/redux/api/policeStationApi";
+
 import { toast } from "react-toastify";
 
 const emptyLocation = () => ({
@@ -26,7 +42,6 @@ export default function CreateLocationQR() {
   const navigate = useNavigate();
 
   const [policeStationId, setPoliceStationId] = useState("");
-
   const [locations, setLocations] = useState([emptyLocation()]);
 
   // Fetch police stations
@@ -43,6 +58,7 @@ export default function CreateLocationQR() {
   const [createLocationQR, { isLoading }] =
     useCreateLocationQRMutation();
 
+  // Update location fields
   const handleChange = (index, field, value) => {
     setLocations((previous) =>
       previous.map((location, i) =>
@@ -53,22 +69,32 @@ export default function CreateLocationQR() {
     );
   };
 
+  // Add another location
   const addLocation = () => {
-    setLocations((previous) => [...previous, emptyLocation()]);
+    setLocations((previous) => [
+      ...previous,
+      emptyLocation(),
+    ]);
   };
 
+  // Remove location
   const removeLocation = (index) => {
     setLocations((previous) =>
       previous.filter((_, i) => i !== index)
     );
   };
 
+  // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate police station
     if (!policeStationId) {
       toast.error("Please select a police station.");
+      return;
+    }
+
+    if (locations.length === 0) {
+      toast.error("Please add at least one location.");
       return;
     }
 
@@ -80,7 +106,9 @@ export default function CreateLocationQR() {
         location.latitude === "" ||
         location.longitude === ""
       ) {
-        toast.error(`Coordinates are required in row ${i + 1}.`);
+        toast.error(
+          `Coordinates are required in row ${i + 1}.`
+        );
         return;
       }
 
@@ -102,7 +130,6 @@ export default function CreateLocationQR() {
       }
     }
 
-    // Send the selected police station ID with all locations
     const payload = {
       police_station_id: Number(policeStationId),
 
@@ -128,19 +155,26 @@ export default function CreateLocationQR() {
     }
   };
 
+  const isStationLoading =
+    isLoadingStations || isFetchingStations;
+
   return (
     <div className="min-h-full space-y-5 bg-gray-50 p-3 md:p-5">
+
       {/* HEADER */}
       <div className="flex items-center gap-3">
-        <button
+
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           onClick={() =>
             navigate("/location-qrs", { replace: true })
           }
-          className="rounded-lg border bg-white p-2 text-gray-600 hover:bg-gray-100"
+          className="shrink-0 bg-white text-gray-600"
         >
           <ArrowLeft size={19} />
-        </button>
+        </Button>
 
         <div>
           <h1 className="text-xl font-bold text-gray-800">
@@ -148,15 +182,19 @@ export default function CreateLocationQR() {
           </h1>
 
           <p className="mt-1 text-xs text-gray-500">
-            Select a police station and add one or multiple locations
-            to generate their QR codes.
+            Select a police station and add one or multiple
+            locations to generate their QR codes.
           </p>
         </div>
+
       </div>
 
-      {/* FORM */}
-      <div className="rounded-xl border bg-white shadow-sm">
+      {/* FORM CARD */}
+      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+
+        {/* CARD HEADER */}
         <div className="flex items-center justify-between border-b p-4">
+
           <div>
             <h2 className="font-semibold text-gray-800">
               Location Details
@@ -170,45 +208,61 @@ export default function CreateLocationQR() {
           <div className="rounded-lg bg-red-50 p-2 text-red-600">
             <QrCode size={20} />
           </div>
+
         </div>
 
+        {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-4 p-4">
+
           {/* POLICE STATION SELECTION */}
           <div className="rounded-xl border border-red-100 bg-red-50/50 p-4">
-            <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
+
+            <Label className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
               <Building2 size={17} className="text-red-500" />
               Select Police Station *
-            </label>
+            </Label>
 
-            <select
+            <Select
               value={policeStationId}
-              onChange={(e) => setPoliceStationId(e.target.value)}
-              required
-              disabled={isLoadingStations || isFetchingStations}
-              className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-red-400 disabled:cursor-not-allowed disabled:bg-gray-100"
+              onValueChange={setPoliceStationId}
+              disabled={isStationLoading || stations.length === 0}
             >
-              <option value="">
-                {isLoadingStations
-                  ? "Loading police stations..."
-                  : "Select a police station"}
-              </option>
+              <SelectTrigger className="!h-10 w-full border-gray-200 bg-white">
+                <SelectValue
+                  placeholder={
+                    isStationLoading
+                      ? "Loading police stations..."
+                      : "Select a police station"
+                  }
+                />
+              </SelectTrigger>
 
-              {stations.map((station) => (
-                <option key={station.id} value={station.id}>
-                  {station.station_name}
-                  {station.district
-                    ? ` - ${station.district}`
-                    : ""}
-                </option>
-              ))}
-            </select>
+              <SelectContent  position="popper"
+        side="bottom"
+        sideOffset={0}
+        align="start"
+        className="max-h-64">
+                {stations.map((station) => (
+                  <SelectItem
+                    key={station.id}
+                    value={String(station.id)}
+                  >
+                    {station.station_name}
+                    {station.district
+                      ? ` - ${station.district}`
+                      : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            {!isLoadingStations && stations.length === 0 && (
+            {!isStationLoading && stations.length === 0 && (
               <p className="mt-2 text-xs text-red-600">
-                No active police stations found. Please activate or
-                create a police station first.
+                No active police stations found. Please activate
+                or create a police station first.
               </p>
             )}
+
           </div>
 
           {/* LOCATION ROWS */}
@@ -217,31 +271,40 @@ export default function CreateLocationQR() {
               key={index}
               className="rounded-xl border bg-gray-50 p-3 md:p-4"
             >
+
+              {/* LOCATION HEADER */}
               <div className="mb-4 flex items-center justify-between">
+
                 <h3 className="text-sm font-semibold text-gray-700">
                   Location {index + 1}
                 </h3>
 
                 {locations.length > 1 && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => removeLocation(index)}
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    className="h-8 gap-1 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
                   >
                     <Trash2 size={14} />
                     Remove
-                  </button>
+                  </Button>
                 )}
+
               </div>
 
+              {/* LOCATION INPUTS */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                {/* LOCATION NAME */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-700">
-                    Location Name
-                  </label>
 
-                  <input
+                {/* LOCATION NAME */}
+                <div className="space-y-1.5">
+
+                  <Label className="text-xs font-medium text-gray-700">
+                    Location Name
+                  </Label>
+
+                  <Input
                     type="text"
                     value={location.location_name}
                     onChange={(e) =>
@@ -252,17 +315,19 @@ export default function CreateLocationQR() {
                       )
                     }
                     placeholder="Example: Main Gate"
-                    className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-red-400"
+                    className="h-10 border-gray-200 bg-white"
                   />
+
                 </div>
 
                 {/* LATITUDE */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-700">
-                    Latitude *
-                  </label>
+                <div className="space-y-1.5">
 
-                  <input
+                  <Label className="text-xs font-medium text-gray-700">
+                    Latitude *
+                  </Label>
+
+                  <Input
                     type="number"
                     step="any"
                     value={location.latitude}
@@ -275,17 +340,19 @@ export default function CreateLocationQR() {
                     }
                     placeholder="22.5726"
                     required
-                    className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-red-400"
+                    className="h-10 border-gray-200 bg-white"
                   />
+
                 </div>
 
                 {/* LONGITUDE */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-gray-700">
-                    Longitude *
-                  </label>
+                <div className="space-y-1.5">
 
-                  <input
+                  <Label className="text-xs font-medium text-gray-700">
+                    Longitude *
+                  </Label>
+
+                  <Input
                     type="number"
                     step="any"
                     value={location.longitude}
@@ -298,49 +365,56 @@ export default function CreateLocationQR() {
                     }
                     placeholder="88.3639"
                     required
-                    className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-red-400"
+                    className="h-10 border-gray-200 bg-white"
                   />
+
                 </div>
+
               </div>
             </div>
           ))}
 
           {/* ADD ANOTHER LOCATION */}
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={addLocation}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 py-3 text-sm font-medium text-red-600 hover:bg-red-50"
+            className="h-11 w-full border-dashed border-red-300 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <Plus size={17} />
             Add Another Location
-          </button>
+          </Button>
 
           {/* ACTIONS */}
           <div className="flex flex-col-reverse justify-between gap-3 border-t pt-4 sm:flex-row">
-            <button
+
+            <Button
               type="button"
+              variant="outline"
               onClick={() =>
                 navigate("/location-qrs", { replace: true })
               }
-              className="rounded-lg border px-5 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
+              className="h-10 px-5 text-gray-600"
             >
               Cancel
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="submit"
               disabled={
                 isLoading ||
-                isLoadingStations ||
-                isFetchingStations ||
+                isStationLoading ||
                 stations.length === 0 ||
                 !policeStationId
               }
-              className="flex items-center justify-center gap-2 rounded-lg bg-red-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-10 bg-red-500 px-6 text-sm font-medium text-white hover:bg-red-600"
             >
               {isLoading ? (
                 <>
-                  <Loader2 size={17} className="animate-spin" />
+                  <Loader2
+                    size={17}
+                    className="animate-spin"
+                  />
                   Generating QRs...
                 </>
               ) : (
@@ -350,8 +424,10 @@ export default function CreateLocationQR() {
                   {locations.length > 1 ? "s" : ""}
                 </>
               )}
-            </button>
+            </Button>
+
           </div>
+
         </form>
       </div>
     </div>

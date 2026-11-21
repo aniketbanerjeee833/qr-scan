@@ -7,6 +7,10 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
 import VirtualList from "../components/common/VirtualList";
 
 import {
@@ -472,23 +476,26 @@ export default function Dashboard() {
         </div>
 
         {/* ACTION */}
-        <div>
-          <button
-            type="button"
-            title="View officer visit details"
-            onClick={() => setSelectedVisit(visit)}
-            className="
-              flex items-center justify-center gap-1.5
-              rounded-lg border border-red-200
-              bg-red-50 px-3 py-2
-              text-xs font-medium text-red-600
-              transition hover:bg-red-100
-            "
-          >
-            <Eye size={14} />
-            View
-          </button>
-        </div>
+      <div>
+  <Button
+    variant="outline"
+    size="sm"
+    type="button"
+    title="View officer visit details"
+    onClick={() => setSelectedVisit(visit)}
+    className="
+      flex items-center justify-center gap-1.5
+      rounded-lg border border-red-200
+      bg-white px-3 py-2
+      text-xs font-medium text-red-600
+      transition-colors
+      hover:bg-red-50 hover:text-red-700
+    "
+  >
+    <Eye size={14} />
+    View
+  </Button>
+</div>
       </div>
     );
   };
@@ -551,7 +558,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={handleRefresh}
             disabled={isLoading || loadingMore}
@@ -568,7 +575,7 @@ export default function Dashboard() {
               className={isLoading ? "animate-spin" : ""}
             />
             Refresh
-          </button>
+          </Button>
         </div>
 
         {/* ================================== */}
@@ -606,12 +613,12 @@ export default function Dashboard() {
             >
               {/* SEARCH */}
               <div className="min-w-0">
-                <label
+                <Label
                   htmlFor="visit-search"
                   className="mb-1 block text-xs font-medium text-gray-600"
                 >
                   Search
-                </label>
+                </Label>
 
                 <div className="relative">
                   <Search
@@ -619,7 +626,7 @@ export default function Dashboard() {
                     className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   />
 
-                  <input
+                  <Input
                     id="visit-search"
                     type="text"
                     name="search"
@@ -640,14 +647,14 @@ export default function Dashboard() {
 
               {/* DATE */}
               <div className="min-w-0">
-                <label
+                <Label
                   htmlFor="visit-date"
                   className="mb-1 block text-xs font-medium text-gray-600"
                 >
                   Date
-                </label>
+                </Label>
 
-                <input
+                <Input
                   id="visit-date"
                   type="date"
                   name="visit_date"
@@ -666,7 +673,7 @@ export default function Dashboard() {
 
               {/* RESET */}
               <div>
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={handleResetFilters}
                   disabled={isDefaultFilters && searchInput === ""}
@@ -681,12 +688,12 @@ export default function Dashboard() {
                 >
                   <RefreshCw size={15} />
                   Reset
-                </button>
+                </Button>
               </div>
 
               {/* DOWNLOAD EXCEL */}
               <div>
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={handleDownloadReport}
                   disabled={isDownloading || isLoading || visits.length === 0}
@@ -710,7 +717,7 @@ export default function Dashboard() {
                     <FileSpreadsheet size={15} />
                   )}
                   Excel Report
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -746,7 +753,7 @@ export default function Dashboard() {
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {isLoading && visits.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                <span className="loading loading-spinner loading-md mr-2" />
+                <Loader2 size={18} className="mr-2 animate-spin" />
                 Loading officer visits...
               </div>
             ) : (
@@ -782,7 +789,7 @@ export default function Dashboard() {
             >
               <p className="text-xs text-red-600">{error}</p>
 
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={handleRefresh}
                 disabled={isLoading || loadingMore}
@@ -794,7 +801,7 @@ export default function Dashboard() {
                 "
               >
                 Retry
-              </button>
+              </Button>
             </div>
           )}
 
@@ -833,14 +840,14 @@ export default function Dashboard() {
                 Officer Visit Details
               </h2>
 
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setSelectedVisit(null)}
                 className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100"
                 aria-label="Close details"
               >
                 <X size={19} />
-              </button>
+              </Button>
             </div>
 
             {/* MODAL BODY */}
@@ -1011,7 +1018,7 @@ export default function Dashboard() {
 
             {/* MODAL FOOTER */}
             <div className="flex shrink-0 justify-end border-t bg-gray-50 px-5 py-3">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setSelectedVisit(null)}
                 className="
@@ -1022,7 +1029,7 @@ export default function Dashboard() {
                 "
               >
                 Close
-              </button>
+              </Button>
             </div>
           </div>
         </div>

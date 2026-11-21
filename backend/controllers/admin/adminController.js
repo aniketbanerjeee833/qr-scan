@@ -239,13 +239,21 @@ const adminLogin = async (req, res, next) => {
     );
 
     // Set session cookie
+    const isNgrok = req.get("origin")?.endsWith(".ngrok-free.app");
+    // res.cookie("admin_session_id", sessionId, {
+    //   httpOnly: true,
+    //   secure: isProduction,
+    //   sameSite: "Lax",
+    //   path: "/",
+    //   maxAge: 24 * 60 * 60 * 1000,
+    // });
     res.cookie("admin_session_id", sessionId, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "Lax",
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+  httpOnly: true,
+  secure: isProduction || isNgrok,
+  sameSite: isProduction || isNgrok ? "none" : "lax",
+  path: "/",
+  maxAge: 24 * 60 * 60 * 1000,
+});
 
     // Respond successfully
     return res.status(200).json({
@@ -280,12 +288,20 @@ const adminLogout = async (req, res, next) => {
     }
 
     // Clear the cookie
-    res.clearCookie("admin_session_id", {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "Lax",
-      path: "/",
-    });
+    const isNgrok = req.get("origin")?.endsWith(".ngrok-free.app");
+    // res.clearCookie("admin_session_id", {
+    //   httpOnly: true,
+    //   secure: isProduction,
+    //   sameSite: "Lax",
+    //   path: "/",
+    // });
+
+res.clearCookie("admin_session_id", {
+  httpOnly: true,
+  secure: isProduction || isNgrok,
+  sameSite: isProduction || isNgrok ? "none" : "lax",
+  path: "/",
+});
 
     return res.status(200).json({
       success: true,
