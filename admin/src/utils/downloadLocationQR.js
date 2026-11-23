@@ -426,7 +426,7 @@ export const downloadLocationQR = async ({
         W / 2,
         765,
         1250,
-        48,
+        40,
         COLORS.primary
       );
     }
