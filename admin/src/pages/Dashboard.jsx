@@ -1,15 +1,13 @@
+
 import React, {
   useCallback,
   useEffect,
-  useRef,
+  useMemo,
   useState,
 } from "react";
+
 import { useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 import VirtualList from "../components/common/VirtualList";
 
@@ -29,7 +27,7 @@ import {
 } from "lucide-react";
 
 import {
-  useLazyGetOfficerVisitsQuery,
+  useGetOfficerVisitsInfiniteQuery,
   useDownloadOfficerVisitsReportMutation,
 } from "@/redux/api/officerVisitApi";
 
@@ -100,41 +98,64 @@ const formatCoordinate = (value) => {
 
 export default function Dashboard() {
   // ------------------------------------------
-  // URL STATE (source of truth for filters)
+  // URL FILTERS
   // ------------------------------------------
-  // ?search=abc            -> search text
-  // ?visit_date=2026-11-19 -> date (defaults to today)
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const urlSearch = searchParams.get("search") || "";
   const urlDate = searchParams.get("visit_date") || getTodayDate();
 
-  // Local input state so typing feels instant;
-  // the URL is updated after the debounce.
+  // Local input state for debounced search
   const [searchInput, setSearchInput] = useState(urlSearch);
 
-  // Data
-  const [visits, setVisits] = useState([]);
-
-  // Pagination
-  const [nextCursor, setNextCursor] = useState(null);
-  const [hasMore, setHasMore] = useState(false);
-
-  // UI
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
+  // Selected visit for details modal
   const [selectedVisit, setSelectedVisit] = useState(null);
 
-  // RTK Query
-  const [getOfficerVisits, { isLoading }] =
-    useLazyGetOfficerVisitsQuery();
+  // ------------------------------------------
+  // RTK QUERY INFINITE QUERY
+  // ------------------------------------------
+
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+    isError,
+    error,
+    isFetchNextPageError,
+  } = useGetOfficerVisitsInfiniteQuery({
+    limit: PAGE_SIZE,
+    search: urlSearch.trim(),
+    visit_date: urlDate,
+  });
+
+  // Flatten all pages into one array
+  const visits = useMemo(() => {
+    return (
+      data?.pages?.flatMap((page) => page?.data ?? []) ?? []
+    );
+  }, [data]);
+
+  // ------------------------------------------
+  // DOWNLOAD REPORT MUTATION
+  // ------------------------------------------
 
   const [downloadReport, { isLoading: isDownloading }] =
     useDownloadOfficerVisitsReportMutation();
 
-  // Request management
-  const requestGenerationRef = useRef(0);
-  const paginationLock = useRef(false);
+  // ------------------------------------------
+  // ERROR MESSAGE
+  // ------------------------------------------
+
+  const errorMessage =
+    error?.data?.message ||
+    error?.data?.error ||
+    error?.error ||
+    "Failed to fetch officer visits.";
 
   // ==========================================
   // URL UPDATE HELPER
@@ -147,7 +168,11 @@ export default function Dashboard() {
           const next = new URLSearchParams(previous);
 
           Object.entries(changes).forEach(([key, value]) => {
-            if (value === null || value === undefined || value === "") {
+            if (
+              value === null ||
+              value === undefined ||
+              value === ""
+            ) {
               next.delete(key);
             } else {
               next.set(key, value);
@@ -163,62 +188,19 @@ export default function Dashboard() {
   );
 
   // ==========================================
-  // PUT TODAY'S DATE IN THE URL ON ARRIVAL
+  // PUT TODAY'S DATE IN URL ON ARRIVAL
   // ==========================================
 
   useEffect(() => {
     if (!searchParams.get("visit_date")) {
-      updateParams({ visit_date: getTodayDate() });
+      updateParams({
+        visit_date: getTodayDate(),
+      });
     }
-    // run once on mount
+
+    // Run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ==========================================
-  // FETCH FIRST PAGE
-  // ==========================================
-
-  const fetchFirstPage = useCallback(
-    async ({ search, visit_date }) => {
-      const generation = ++requestGenerationRef.current;
-
-      setError("");
-      setVisits([]);
-      setNextCursor(null);
-      setHasMore(false);
-      setLoadingMore(false);
-      paginationLock.current = false;
-
-      try {
-        const result = await getOfficerVisits({
-          limit: PAGE_SIZE,
-          search: search?.trim() || "",
-          visit_date: visit_date || "",
-        }).unwrap();
-
-        // Ignore outdated responses
-        if (generation !== requestGenerationRef.current) return;
-
-        setVisits(result.data || []);
-        setNextCursor(result.pagination?.nextCursor ?? null);
-        setHasMore(result.pagination?.hasMore ?? false);
-      } catch (err) {
-        if (generation !== requestGenerationRef.current) return;
-
-        setError(err?.data?.message || "Failed to fetch officer visits.");
-      }
-    },
-    [getOfficerVisits]
-  );
-
-  // ==========================================
-  // FETCH WHENEVER URL FILTERS CHANGE
-  // (covers first load, refresh, back/forward)
-  // ==========================================
-
-  useEffect(() => {
-    fetchFirstPage({ search: urlSearch, visit_date: urlDate });
-  }, [urlSearch, urlDate, fetchFirstPage]);
 
   // ==========================================
   // DEBOUNCE: INPUT -> URL
@@ -230,14 +212,17 @@ export default function Dashboard() {
     if (trimmed === urlSearch) return;
 
     const timeout = setTimeout(() => {
-      updateParams({ search: trimmed });
+      updateParams({
+        search: trimmed,
+      });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timeout);
   }, [searchInput, urlSearch, updateParams]);
 
   // ==========================================
-  // SYNC: URL -> INPUT (back/forward, reset)
+  // SYNC: URL -> INPUT
+  // Supports browser back/forward and reset
   // ==========================================
 
   useEffect(() => {
@@ -250,76 +235,38 @@ export default function Dashboard() {
   // LOAD NEXT PAGE
   // ==========================================
 
-  const loadMoreVisits = useCallback(async () => {
-    if (paginationLock.current || !hasMore || nextCursor == null) {
+  const loadMoreVisits = useCallback(() => {
+    if (!hasNextPage || isFetchingNextPage) {
       return;
     }
 
-    paginationLock.current = true;
-    setLoadingMore(true);
-
-    const generation = requestGenerationRef.current;
-
-    try {
-      const result = await getOfficerVisits({
-        limit: PAGE_SIZE,
-        cursor: nextCursor,
-        search: urlSearch.trim(),
-        visit_date: urlDate || "",
-      }).unwrap();
-
-      // Ignore outdated pagination response
-      if (generation !== requestGenerationRef.current) {
-        return;
-      }
-
-      const newVisits = result.data || [];
-
-      // Append only unique records
-      setVisits((previous) => {
-        const existingIds = new Set(previous.map((visit) => visit.id));
-
-        const uniqueVisits = newVisits.filter(
-          (visit) => !existingIds.has(visit.id)
-        );
-
-        return [...previous, ...uniqueVisits];
-      });
-
-      setNextCursor(result.pagination?.nextCursor ?? null);
-      setHasMore(result.pagination?.hasMore ?? false);
-    } catch (err) {
-      if (generation === requestGenerationRef.current) {
-        setError(
-          err?.data?.message || "Failed to load more officer visits."
-        );
-      }
-    } finally {
-      paginationLock.current = false;
-
-      if (generation === requestGenerationRef.current) {
-        setLoadingMore(false);
-      }
-    }
-  }, [getOfficerVisits, hasMore, nextCursor, urlSearch, urlDate]);
+    fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // ==========================================
   // FILTER HANDLERS
   // ==========================================
 
   const handleDateChange = (e) => {
-    // Cleared input -> param removed -> falls back to today
-    updateParams({ visit_date: e.target.value || null });
+    // Empty date falls back to today
+    updateParams({
+      visit_date: e.target.value || null,
+    });
   };
 
-  // Reset: no search, date back to today (kept visible in URL)
   const handleResetFilters = () => {
     setSearchInput("");
-    setSearchParams({ visit_date: getTodayDate() }, { replace: true });
+
+    setSearchParams(
+      {
+        visit_date: getTodayDate(),
+      },
+      { replace: true }
+    );
   };
 
   const handleRefresh = () => {
-    fetchFirstPage({ search: urlSearch, visit_date: urlDate });
+    refetch();
   };
 
   const isDefaultFilters =
@@ -327,8 +274,6 @@ export default function Dashboard() {
 
   // ==========================================
   // DOWNLOAD EXCEL REPORT
-  // Uses the APPLIED filters (URL), so the file
-  // always matches what the table is showing.
   // ==========================================
 
   const handleDownloadReport = async () => {
@@ -389,53 +334,74 @@ export default function Dashboard() {
         "
       >
         {/* SERIAL NUMBER */}
+
         <div className="text-xs font-medium text-gray-500">
           <span className="md:hidden">Sl.No.: </span>
           {index + 1}
         </div>
 
         {/* POLICE STATION */}
+
         <div className="min-w-0">
           <p
             title={visit.station_name || "N/A"}
-            className="whitespace-normal break-words text-sm font-semibold text-gray-800"
+            className="
+              whitespace-normal break-words
+              text-sm font-semibold text-gray-800
+            "
           >
             {visit.station_name || "N/A"}
           </p>
 
           <p
             title={visit.district || ""}
-            className="mt-1 whitespace-normal break-words text-xs text-gray-500"
+            className="
+              mt-1 whitespace-normal break-words
+              text-xs text-gray-500
+            "
           >
             {visit.district || ""}
           </p>
         </div>
 
         {/* OFFICER NAME */}
+
         <div className="min-w-0">
-          <p className="text-xs text-gray-500 md:hidden">Officer Name</p>
+          <p className="text-xs text-gray-500 md:hidden">
+            Officer Name
+          </p>
 
           <p
             title={visit.officer_name || "N/A"}
-            className="whitespace-normal break-words text-sm font-medium text-gray-800"
+            className="
+              whitespace-normal break-words
+              text-sm font-medium text-gray-800
+            "
           >
             {visit.officer_name || "N/A"}
           </p>
         </div>
 
         {/* LOCATION */}
+
         <div className="min-w-0">
-          <p className="text-xs text-gray-500 md:hidden">Location</p>
+          <p className="text-xs text-gray-500 md:hidden">
+            Location
+          </p>
 
           <p
             title={visit.location_name || "N/A"}
-            className="whitespace-normal break-words text-sm text-gray-700"
+            className="
+              whitespace-normal break-words
+              text-sm text-gray-700
+            "
           >
             {visit.location_name || "N/A"}
           </p>
         </div>
 
         {/* GPS */}
+
         <div className="min-w-0">
           <p className="text-xs text-gray-500 md:hidden">
             GPS Coordinates
@@ -457,8 +423,11 @@ export default function Dashboard() {
         </div>
 
         {/* VISIT TIME */}
+
         <div>
-          <p className="text-xs text-gray-500 md:hidden">Visit Time</p>
+          <p className="text-xs text-gray-500 md:hidden">
+            Visit Time
+          </p>
 
           <p
             title={formatDate(visit.visited_at)}
@@ -476,26 +445,24 @@ export default function Dashboard() {
         </div>
 
         {/* ACTION */}
-      <div>
-  <Button
-    variant="outline"
-    size="sm"
-    type="button"
-    title="View officer visit details"
-    onClick={() => setSelectedVisit(visit)}
-    className="
-      flex items-center justify-center gap-1.5
-      rounded-lg border border-red-200
-      bg-white px-3 py-2
-      text-xs font-medium text-red-600
-      transition-colors
-      hover:bg-red-50 hover:text-red-700
-    "
-  >
-    <Eye size={14} />
-    View
-  </Button>
-</div>
+
+        <div>
+          <button
+            type="button"
+            title="View officer visit details"
+            onClick={() => setSelectedVisit(visit)}
+            className="
+              flex items-center justify-center gap-1.5
+              rounded-lg border border-red-200
+              bg-red-50 px-3 py-2
+              text-xs font-medium text-red-600
+              transition hover:bg-red-100
+            "
+          >
+            <Eye size={14} />
+            View
+          </button>
+        </div>
       </div>
     );
   };
@@ -510,7 +477,8 @@ export default function Dashboard() {
   const imageUrl = getImageUrl(selectedImage);
 
   const hasCoordinates =
-    selectedVisit?.latitude != null && selectedVisit?.longitude != null;
+    selectedVisit?.latitude != null &&
+    selectedVisit?.longitude != null;
 
   const mapsUrl = hasCoordinates
     ? `https://www.google.com/maps?q=${encodeURIComponent(
@@ -558,10 +526,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <Button variant="outline" size="sm"
+          <button
             type="button"
             onClick={handleRefresh}
-            disabled={isLoading || loadingMore}
+            disabled={isFetching}
             className="
               flex items-center justify-center gap-2
               rounded-lg border bg-white
@@ -572,10 +540,10 @@ export default function Dashboard() {
           >
             <RefreshCw
               size={14}
-              className={isLoading ? "animate-spin" : ""}
+              className={isFetching ? "animate-spin" : ""}
             />
             Refresh
-          </Button>
+          </button>
         </div>
 
         {/* ================================== */}
@@ -590,6 +558,7 @@ export default function Dashboard() {
           "
         >
           {/* CARD HEADER */}
+
           <div className="shrink-0 border-b p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -604,6 +573,7 @@ export default function Dashboard() {
             </div>
 
             {/* SEARCH, DATE, RESET, DOWNLOAD */}
+
             <div
               className="
                 grid grid-cols-1 gap-3
@@ -612,26 +582,35 @@ export default function Dashboard() {
               "
             >
               {/* SEARCH */}
+
               <div className="min-w-0">
-                <Label
+                <label
                   htmlFor="visit-search"
-                  className="mb-1 block text-xs font-medium text-gray-600"
+                  className="
+                    mb-1 block text-xs
+                    font-medium text-gray-600
+                  "
                 >
                   Search
-                </Label>
+                </label>
 
                 <div className="relative">
                   <Search
                     size={15}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    className="
+                      pointer-events-none absolute left-3
+                      top-1/2 -translate-y-1/2 text-gray-400
+                    "
                   />
 
-                  <Input
+                  <input
                     id="visit-search"
                     type="text"
                     name="search"
                     value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
+                    onChange={(e) =>
+                      setSearchInput(e.target.value)
+                    }
                     placeholder="Search"
                     className="
                       h-9 w-full rounded-lg border border-gray-200
@@ -646,23 +625,27 @@ export default function Dashboard() {
               </div>
 
               {/* DATE */}
+
               <div className="min-w-0">
-                <Label
+                <label
                   htmlFor="visit-date"
-                  className="mb-1 block text-xs font-medium text-gray-600"
+                  className="
+                    mb-1 block text-xs
+                    font-medium text-gray-600
+                  "
                 >
                   Date
-                </Label>
+                </label>
 
-                <Input
+                <input
                   id="visit-date"
                   type="date"
                   name="visit_date"
                   value={urlDate}
                   onChange={handleDateChange}
                   className="
-                    h-9 w-full min-w-0 rounded-lg border border-gray-200
-                    px-3
+                    h-9 w-full min-w-0 rounded-lg
+                    border border-gray-200 px-3
                     text-xs text-gray-600
                     outline-none transition
                     focus:border-red-400
@@ -672,11 +655,14 @@ export default function Dashboard() {
               </div>
 
               {/* RESET */}
+
               <div>
-                <Button variant="outline" size="sm"
+                <button
                   type="button"
                   onClick={handleResetFilters}
-                  disabled={isDefaultFilters && searchInput === ""}
+                  disabled={
+                    isDefaultFilters && searchInput === ""
+                  }
                   className="
                     flex h-9 w-full items-center justify-center gap-1.5
                     rounded-lg border border-gray-200
@@ -688,15 +674,20 @@ export default function Dashboard() {
                 >
                   <RefreshCw size={15} />
                   Reset
-                </Button>
+                </button>
               </div>
 
               {/* DOWNLOAD EXCEL */}
+
               <div>
-                <Button variant="outline" size="sm"
+                <button
                   type="button"
                   onClick={handleDownloadReport}
-                  disabled={isDownloading || isLoading || visits.length === 0}
+                  disabled={
+                    isDownloading ||
+                    isLoading ||
+                    visits.length === 0
+                  }
                   title={
                     visits.length === 0
                       ? "No visits to export for the selected filters"
@@ -712,12 +703,16 @@ export default function Dashboard() {
                   "
                 >
                   {isDownloading ? (
-                    <Loader2 size={15} className="animate-spin" />
+                    <Loader2
+                      size={15}
+                      className="animate-spin"
+                    />
                   ) : (
                     <FileSpreadsheet size={15} />
                   )}
+
                   Excel Report
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -741,8 +736,8 @@ export default function Dashboard() {
             <div>Police Station</div>
             <div>Officer Name</div>
             <div>Location</div>
-            <div>GPS</div>
-            <div>Time</div>
+            <div>Lat/Long</div>
+            <div>Date & Time</div>
             <div>Action</div>
           </div>
 
@@ -752,8 +747,13 @@ export default function Dashboard() {
 
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {isLoading && visits.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                <Loader2 size={18} className="mr-2 animate-spin" />
+              <div
+                className="
+                  flex h-full items-center
+                  justify-center text-sm text-gray-500
+                "
+              >
+                <span className="loading loading-spinner loading-md mr-2" />
                 Loading officer visits...
               </div>
             ) : (
@@ -763,8 +763,8 @@ export default function Dashboard() {
                 getItemKey={(visit) => visit.id}
                 estimateSize={115}
                 overscan={5}
-                hasMore={hasMore}
-                isLoadingMore={loadingMore}
+                hasMore={Boolean(hasNextPage)}
+                isLoadingMore={isFetchingNextPage}
                 onEndReached={loadMoreVisits}
                 endThreshold={5}
                 emptyMessage="No officer visits found."
@@ -778,7 +778,7 @@ export default function Dashboard() {
           {/* ERROR */}
           {/* ================================== */}
 
-          {error && (
+          {isError && (
             <div
               className="
                 flex shrink-0 items-center
@@ -787,12 +787,14 @@ export default function Dashboard() {
                 bg-red-50 px-4 py-2
               "
             >
-              <p className="text-xs text-red-600">{error}</p>
+              <p className="text-xs text-red-600">
+                {errorMessage}
+              </p>
 
-              <Button variant="outline" size="sm"
+              <button
                 type="button"
                 onClick={handleRefresh}
-                disabled={isLoading || loadingMore}
+                disabled={isFetching}
                 className="
                   rounded-lg border border-red-200
                   bg-white px-3 py-1.5
@@ -801,7 +803,38 @@ export default function Dashboard() {
                 "
               >
                 Retry
-              </Button>
+              </button>
+            </div>
+          )}
+
+          {/* NEXT PAGE ERROR */}
+
+          {isFetchNextPageError && (
+            <div
+              className="
+                flex shrink-0 items-center
+                justify-between gap-3
+                border-t border-red-100
+                bg-red-50 px-4 py-2
+              "
+            >
+              <p className="text-xs text-red-600">
+                Failed to load more officer visits.
+              </p>
+
+              <button
+                type="button"
+                onClick={loadMoreVisits}
+                disabled={isFetchingNextPage}
+                className="
+                  rounded-lg border border-red-200
+                  bg-white px-3 py-1.5
+                  text-xs text-red-600
+                  hover:bg-red-100
+                "
+              >
+                Retry
+              </button>
             </div>
           )}
 
@@ -809,11 +842,20 @@ export default function Dashboard() {
           {/* FOOTER */}
           {/* ================================== */}
 
-          {!isLoading && visits.length > 0 && !hasMore && (
-            <div className="shrink-0 border-t bg-gray-50 px-4 py-2.5 text-center text-xs text-gray-500">
-              All officer visit records loaded.
-            </div>
-          )}
+          {!isLoading &&
+            visits.length > 0 &&
+            !hasNextPage &&
+            !isFetchingNextPage && (
+              <div
+                className="
+                  shrink-0 border-t bg-gray-50
+                  px-4 py-2.5 text-center
+                  text-xs text-gray-500
+                "
+              >
+                All officer visit records loaded.
+              </div>
+            )}
         </div>
       </div>
 
@@ -823,7 +865,11 @@ export default function Dashboard() {
 
       {selectedVisit && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
+          className="
+            fixed inset-0 z-50
+            flex items-center justify-center
+            bg-black/50 p-3
+          "
           onClick={() => setSelectedVisit(null)}
         >
           <div
@@ -835,25 +881,41 @@ export default function Dashboard() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* MODAL HEADER */}
-            <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
+
+            <div
+              className="
+                flex shrink-0 items-center
+                justify-between border-b px-5 py-4
+              "
+            >
               <h2 className="text-base font-semibold text-gray-800">
                 Officer Visit Details
               </h2>
 
-              <Button variant="outline" size="sm"
+              <button
                 type="button"
                 onClick={() => setSelectedVisit(null)}
-                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100"
+                className="
+                  rounded-lg p-2 text-gray-500
+                  transition hover:bg-gray-100
+                "
                 aria-label="Close details"
               >
                 <X size={19} />
-              </Button>
+              </button>
             </div>
 
             {/* MODAL BODY */}
+
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-[180px_1fr]">
+              <div
+                className="
+                  grid grid-cols-1 gap-5
+                  sm:grid-cols-[180px_1fr]
+                "
+              >
                 {/* OFFICER IMAGE */}
+
                 <div>
                   <p className="mb-2 text-xs font-semibold text-gray-600">
                     Image
@@ -869,60 +931,113 @@ export default function Dashboard() {
                       <img
                         src={imageUrl}
                         alt="Officer selfie"
-                        className="h-48 w-full rounded-lg border border-gray-200 bg-gray-50 object-cover"
+                        className="
+                          h-48 w-full rounded-lg
+                          border border-gray-200
+                          bg-gray-50 object-cover
+                        "
                       />
 
-                      <span className="mt-2 flex items-center gap-1 text-xs text-red-600">
+                      <span
+                        className="
+                          mt-2 flex items-center gap-1
+                          text-xs text-red-600
+                        "
+                      >
                         <ExternalLink size={12} />
                         Open full image
                       </span>
                     </a>
                   ) : (
-                    <div className="flex h-48 items-center justify-center rounded-lg border bg-gray-50 text-gray-400">
+                    <div
+                      className="
+                        flex h-48 items-center justify-center
+                        rounded-lg border bg-gray-50 text-gray-400
+                      "
+                    >
                       <div className="text-center">
-                        <Camera size={30} className="mx-auto mb-2" />
-                        <p className="text-xs">No image available</p>
+                        <Camera
+                          size={30}
+                          className="mx-auto mb-2"
+                        />
+
+                        <p className="text-xs">
+                          No image available
+                        </p>
                       </div>
                     </div>
                   )}
                 </div>
 
                 {/* OFFICER + STATION DETAILS */}
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div
+                    className="
+                      space-y-4 rounded-lg
+                      border border-gray-200 p-4
+                    "
+                  >
+                    <h3
+                      className="
+                        text-xs font-semibold
+                        uppercase tracking-wide text-gray-500
+                      "
+                    >
                       Officer Details
                     </h3>
 
                     <div>
-                      <p className="text-xs text-gray-500">Officer Name</p>
+                      <p className="text-xs text-gray-500">
+                        Officer Name
+                      </p>
+
                       <p className="mt-1 break-words text-sm font-medium text-gray-800">
                         {selectedVisit.officer_name || "N/A"}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500">Phone Number</p>
+                      <p className="text-xs text-gray-500">
+                        Phone Number
+                      </p>
+
                       <p className="mt-1 text-sm text-gray-800">
                         {selectedVisit.officer_phone || "N/A"}
                       </p>
                     </div>
                   </div>
 
-                  <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div
+                    className="
+                      space-y-4 rounded-lg
+                      border border-gray-200 p-4
+                    "
+                  >
+                    <h3
+                      className="
+                        text-xs font-semibold
+                        uppercase tracking-wide text-gray-500
+                      "
+                    >
                       Station Details
                     </h3>
 
                     <div>
-                      <p className="text-xs text-gray-500">Police Station</p>
+                      <p className="text-xs text-gray-500">
+                        Police Station
+                      </p>
+
                       <p className="mt-1 break-words text-sm font-medium text-gray-800">
                         {selectedVisit.station_name || "N/A"}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500">District</p>
+                      <p className="text-xs text-gray-500">
+                        District
+                      </p>
+
                       <p className="mt-1 break-words text-sm text-gray-800">
                         {selectedVisit.district || "N/A"}
                       </p>
@@ -932,9 +1047,13 @@ export default function Dashboard() {
               </div>
 
               {/* GPS COORDINATES + LOCATION */}
+
               <div className="mt-6 rounded-lg border border-gray-200 p-4">
                 <div className="mb-4 flex items-center gap-2">
-                  <Navigation size={16} className="text-red-500" />
+                  <Navigation
+                    size={16}
+                    className="text-red-500"
+                  />
 
                   <h3 className="text-sm font-semibold text-gray-800">
                     GPS Coordinates & Location
@@ -942,11 +1061,16 @@ export default function Dashboard() {
                 </div>
 
                 <div className="mb-4 border-b border-gray-100 pb-4">
-                  <p className="text-xs text-gray-500">Location Name</p>
+                  <p className="text-xs text-gray-500">
+                    Location Name
+                  </p>
 
                   <p
                     title={selectedVisit.location_name || "N/A"}
-                    className="mt-1 break-words text-sm font-medium text-gray-800"
+                    className="
+                      mt-1 break-words
+                      text-sm font-medium text-gray-800
+                    "
                   >
                     {selectedVisit.location_name || "N/A"}
                   </p>
@@ -954,14 +1078,20 @@ export default function Dashboard() {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs text-gray-500">Latitude</p>
+                    <p className="text-xs text-gray-500">
+                      Latitude
+                    </p>
+
                     <p className="mt-1 break-all text-sm text-gray-800">
                       {formatCoordinate(selectedVisit.latitude)}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-xs text-gray-500">Longitude</p>
+                    <p className="text-xs text-gray-500">
+                      Longitude
+                    </p>
+
                     <p className="mt-1 break-all text-sm text-gray-800">
                       {formatCoordinate(selectedVisit.longitude)}
                     </p>
@@ -989,9 +1119,13 @@ export default function Dashboard() {
               </div>
 
               {/* VISIT DATE AND TIME */}
+
               <div className="mt-4 rounded-lg border border-gray-200 p-4">
                 <div className="mb-3 flex items-center gap-2">
-                  <Clock size={16} className="text-red-500" />
+                  <Clock
+                    size={16}
+                    className="text-red-500"
+                  />
 
                   <h3 className="text-sm font-semibold text-gray-800">
                     Visit Date and Time
@@ -1000,14 +1134,20 @@ export default function Dashboard() {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs text-gray-500">Visit Date</p>
+                    <p className="text-xs text-gray-500">
+                      Visit Date
+                    </p>
+
                     <p className="mt-1 text-sm text-gray-800">
                       {formatDate(selectedVisit.visited_at)}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-xs text-gray-500">Visit Time</p>
+                    <p className="text-xs text-gray-500">
+                      Visit Time
+                    </p>
+
                     <p className="mt-1 text-sm text-gray-800">
                       {formatTime(selectedVisit.visited_at)}
                     </p>
@@ -1017,8 +1157,14 @@ export default function Dashboard() {
             </div>
 
             {/* MODAL FOOTER */}
-            <div className="flex shrink-0 justify-end border-t bg-gray-50 px-5 py-3">
-              <Button variant="outline" size="sm"
+
+            <div
+              className="
+                flex shrink-0 justify-end
+                border-t bg-gray-50 px-5 py-3
+              "
+            >
+              <button
                 type="button"
                 onClick={() => setSelectedVisit(null)}
                 className="
@@ -1029,7 +1175,7 @@ export default function Dashboard() {
                 "
               >
                 Close
-              </Button>
+              </button>
             </div>
           </div>
         </div>

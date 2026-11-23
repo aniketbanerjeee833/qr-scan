@@ -1,19 +1,28 @@
-
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+
+// Next cursor for the infinite query (undefined = no more pages)
+const getNextCursor = (lastPage) => {
+  if (!lastPage?.pagination?.hasMore) return undefined;
+
+  return lastPage.pagination.nextCursor ?? undefined;
+};
 
 export const locationQRApi = createApi({
   reducerPath: "locationQRApi",
 
   baseQuery: fetchBaseQuery({
-    //baseUrl: "http://localhost:4000/api/",
-    baseUrl: "https://036c-115-187-48-18.ngrok-free.app/api/",
+    baseUrl: "http://localhost:4000/api/",
+    //baseUrl: "https://448f-115-187-48-18.ngrok-free.app/api/",
     credentials: "include",
+    // prepareHeaders: (headers) => {
+    //   headers.set("ngrok-skip-browser-warning", "true");
+    //   return headers;
+    // },
   }),
 
   tagTypes: ["LocationQR"],
 
   endpoints: (builder) => ({
-
     // Create multiple location QRs
     createLocationQR: builder.mutation({
       query: (body) => ({
@@ -24,21 +33,31 @@ export const locationQRApi = createApi({
       invalidatesTags: [{ type: "LocationQR", id: "LIST" }],
     }),
 
-    // Get location QRs with cursor pagination
-    getAllLocationQRs: builder.query({
-      query: (params = {}) => ({
+    // Location QRs with cursor pagination (infinite query)
+    getAllLocationQRs: builder.infiniteQuery({
+      query: ({ queryArg, pageParam }) => ({
         url: "admin/location-qrs",
         method: "GET",
-        params,
+        params: {
+          ...queryArg,
+          ...(pageParam ? { cursor: pageParam } : {}),
+        },
       }),
+
+      infiniteQueryOptions: {
+        initialPageParam: null,
+        getNextPageParam: getNextCursor,
+      },
+
       providesTags: (result) => [
         { type: "LocationQR", id: "LIST" },
-        ...(Array.isArray(result?.data)
-          ? result.data.map((item) => ({
-              type: "LocationQR",
-              id: item.id,
-            }))
-          : []),
+
+        ...(result?.pages ?? []).flatMap((page) =>
+          (page?.data ?? []).map((item) => ({
+            type: "LocationQR",
+            id: item.id,
+          }))
+        ),
       ],
     }),
 
@@ -83,8 +102,7 @@ export const locationQRApi = createApi({
 
 export const {
   useCreateLocationQRMutation,
-  useGetAllLocationQRsQuery,
-  useLazyGetAllLocationQRsQuery,
+  useGetAllLocationQRsInfiniteQuery,
   useUpdateLocationQRMutation,
   useRegenerateLocationQRMutation,
   useDeleteLocationQRMutation,

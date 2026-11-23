@@ -50,12 +50,13 @@ console.log("Browser path:", window.location.pathname);
   // ✅ Call backend to check session
  useEffect(() => {
   fetch(
-    "https://036c-115-187-48-18.ngrok-free.app/api/admin/me",
+    //"https://448f-115-187-48-18.ngrok-free.app/api/admin/me",
+    "http://localhost:4000/api/admin/me",
     {
       credentials: "include",
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
+      // headers: {
+      //   "ngrok-skip-browser-warning": "true",
+      // },
     }
   )
     .then(async (res) => {

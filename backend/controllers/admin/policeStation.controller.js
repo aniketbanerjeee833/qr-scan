@@ -187,7 +187,31 @@ if (search?.trim()) {
     return getError(res, "Failed to fetch police stations", 500);
   }
 };
+export const getPoliceStationOptions = async (req, res) => {
+  try {
+    const [stations] = await db.query(`
+      SELECT
+        id,
+        station_name,
+        district
+      FROM police_stations
+      WHERE is_active = 1
+      ORDER BY station_name ASC
+    `);
 
+    return res.status(200).json({
+      success: true,
+      data: stations,
+    });
+  } catch (error) {
+    console.error("Get police station options:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch police station options.",
+    });
+  }
+};
 // ========================================
 // GET POLICE STATION BY ID
 // GET /api/admin/police-stations/:id
@@ -1025,7 +1049,7 @@ export const getOfficerVisitReport = async (req, res) => {
 
     // 3. Find officer belonging to the station
     const [officerRows] = await db.query(
-      `SELECT 
+      `SELECT
           o.id,
           o.name,
           o.phone_number,
@@ -1059,7 +1083,7 @@ export const getOfficerVisitReport = async (req, res) => {
       params.push(to);
     }
 
-    // 5. Fetch officer visits
+    // 5. Fetch ALL individual visits
     const [visits] = await db.query(
       `SELECT
           v.${VISIT_TIME_COL} AS visited_at,
@@ -1075,7 +1099,7 @@ export const getOfficerVisitReport = async (req, res) => {
       params
     );
 
-    // 6. Group visits by day
+    // 6. Group visits by date
     const days = groupByDay(visits);
 
     // 7. Return response
@@ -1094,20 +1118,25 @@ export const getOfficerVisitReport = async (req, res) => {
         },
 
         summary: {
+          // Number of distinct dates
           days_visited: days.length,
+
+          // Number of individual visit records
           total_visits: visits.length,
         },
 
-        days: days
-          .slice()
-          .reverse()
-          .map(({ key, list }) => ({
-            date: key,
-            date_label: toDateLabel(key),
-            day: toDayName(key),
-            visit: toTimeLabel(list[0].visited_at),
-            locations: uniqueLocations(list),
-          })),
+       days: days
+  .slice()
+  .reverse()
+  .flatMap(({ key, list }) =>
+    list.map((visit) => ({
+      date: key,
+      date_label: toDateLabel(key),
+      day: toDayName(key),
+      visit_time: toTimeLabel(visit.visited_at),
+      locations: visit.location_name || "N/A",
+    }))
+  ),
       },
     });
   } catch (error) {
@@ -1128,36 +1157,53 @@ export const getOfficerVisitReport = async (req, res) => {
    ?from=YYYY-MM-DD&to=YYYY-MM-DD
 ========================================================== */
 
+
+
 export const downloadOfficerReport = async (req, res) => {
   try {
     const { stationId, officerId } = req.params;
 
+    // 1. VALIDATE IDS
     if (!isValidId(stationId) || !isValidId(officerId)) {
       return getError(res, "Invalid station or officer ID", 400);
     }
 
+    // 2. VALIDATE DATE RANGE
     const range = getOptionalReportRange(req.query);
 
     if (range.error) {
       return getError(res, range.error, 400);
     }
 
+    // 3. FETCH OFFICER DETAILS
     const [officers] = await db.query(
-      `SELECT o.id, o.name, o.phone_number, ps.station_name
+      `SELECT
+          o.id,
+          o.name,
+          o.phone_number,
+          ps.station_name
        FROM police_station_officers o
-       INNER JOIN police_stations ps ON ps.id = o.police_station_id
-       WHERE o.id = ? AND o.police_station_id = ?
+       INNER JOIN police_stations ps
+          ON ps.id = o.police_station_id
+       WHERE o.id = ?
+         AND o.police_station_id = ?
        LIMIT 1`,
       [officerId, stationId]
     );
 
     if (!officers.length) {
-      return getError(res, "Officer not found in this police station", 404);
+      return getError(
+        res,
+        "Officer not found in this police station",
+        404
+      );
     }
 
     const officer = officers[0];
 
+    // 4. BUILD VISIT FILTERS
     let visitConditions = `v.${VISIT_OFFICER_COL} = ?`;
+
     const visitParams = [officerId];
 
     if (range.from) {
@@ -1170,28 +1216,32 @@ export const downloadOfficerReport = async (req, res) => {
       visitParams.push(range.to);
     }
 
+    // 5. FETCH ALL INDIVIDUAL VISITS
     const [visits] = await db.query(
       `SELECT
-         v.${VISIT_TIME_COL} AS visited_at,
-         v.latitude,
-         v.longitude,
-         q.${QR_NAME_COL} AS location_name
+          v.${VISIT_TIME_COL} AS visited_at,
+          v.latitude,
+          v.longitude,
+          q.${QR_NAME_COL} AS location_name
        FROM ${VISIT_TABLE} v
-       LEFT JOIN ${QR_TABLE} q ON q.id = v.${VISIT_QR_COL}
+       LEFT JOIN ${QR_TABLE} q
+          ON q.id = v.${VISIT_QR_COL}
        WHERE ${visitConditions}
-       ORDER BY v.${VISIT_TIME_COL} ASC`,
+       ORDER BY
+          v.${VISIT_TIME_COL} ASC`,
       visitParams
     );
 
+    // 6. GROUP BY DAY
     const days = groupByDay(visits);
 
+    // 7. EXCEL INFORMATION
     const info = [
       ["Officer", officer.name],
       ["Phone", officer.phone_number || "N/A"],
       ["Police Station", officer.station_name],
     ];
 
-    // Show Period only when at least one date is selected.
     if (range.from || range.to) {
       info.push([
         "Period",
@@ -1201,76 +1251,50 @@ export const downloadOfficerReport = async (req, res) => {
       ]);
     }
 
-    info.push(["Days Visited", days.length]);
+    info.push(
+      ["Days Visited", days.length],
+      ["Total Visits", visits.length]
+    );
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Police Station Visit Verification System";
+
+    workbook.creator =
+      "Police Station Visit Verification System";
+
     workbook.created = new Date();
 
-   
-// Sheet 1: One row per day visited
+    // 8. SHEET: DAYS VISITED
+    // ONE ROW PER INDIVIDUAL VISIT
 
-const hasMultipleVisits = days.some(({ list }) => list.length > 1);
+    const dayRows = days.flatMap(({ key, list }) =>
+      list.map((visit) => [
+        toDateLabel(key),
+        toDayName(key),
+        toTimeLabel(visit.visited_at),
+        visit.location_name || "N/A",
+      ])
+    );
 
-const dayHeaders = [
-  "Sr No",
-  "Date",
-  "Day",
-  ...(hasMultipleVisits
-    ? ["First Visit", "Last Visit"]
-    : ["Visit"]),
-  "Locations",
-];
+    const numberedDayRows = dayRows.map((row, index) => [
+      index + 1,
+      ...row,
+    ]);
 
-const dayRows = days.map(({ key, list }, index) => [
-  index + 1,
-  toDateLabel(key),
-  toDayName(key),
-
-  ...(hasMultipleVisits
-    ? [
-        toTimeLabel(list[0].visited_at),
-        toTimeLabel(list[list.length - 1].visited_at),
-      ]
-    : [toTimeLabel(list[0].visited_at)]),
-
-  uniqueLocations(list),
-]);
-
-addSheet(workbook, "Days Visited", {
-  title: "Officer Visit Report - Days Visited",
-  info,
-  headers: dayHeaders,
-  widths: hasMultipleVisits
-    ? [8, 14, 14, 14, 14, 45]
-    : [8, 14, 14, 14, 45],
-  rows: dayRows,
-});
-
-    addSheet(workbook, "Visit Details", {
-      title: "Officer Visit Report - Visit Details",
+    addSheet(workbook, "Days Visited", {
+      title: "Officer Visit Report - Days Visited",
       info,
       headers: [
         "Sr No",
         "Date",
-        "Time",
+        "Day",
+        "Visit Time",
         "Location",
-        "Latitude",
-        "Longitude",
-        "GPS Status",
       ],
-      widths: [8, 14, 12, 40, 14, 14, 14],
-      rows: visits.map((v, index) => [
-        index + 1,
-        toDateLabel(toDateKey(v.visited_at)),
-        toTimeLabel(v.visited_at),
-        v.location_name || "N/A",
-        v.latitude !== null ? Number(v.latitude) : "",
-        v.longitude !== null ? Number(v.longitude) : "",
-        "",
-      ]),
+      widths: [8, 14, 14, 16, 45],
+      rows: numberedDayRows,
     });
 
+    // 9. DOWNLOAD EXCEL FILE
     const dateSuffix = [
       range.from ? `from_${range.from}` : "",
       range.to ? `to_${range.to}` : "",
@@ -1283,27 +1307,47 @@ addSheet(workbook, "Days Visited", {
     }.xlsx`;
 
     return await sendWorkbook(res, workbook, filename);
+
   } catch (error) {
     console.error("Download officer report:", error);
 
-    if (res.headersSent) return res.end();
+    if (res.headersSent) {
+      return res.end();
+    }
 
-    return getError(res, "Failed to generate officer report", 500);
+    return getError(
+      res,
+      "Failed to generate officer report",
+      500
+    );
   }
 };
+
+
 /* ==========================================================
    2. STATION REPORT (ALL OFFICERS)
    GET /api/admin/police-stations/:stationId/report
    ?from=YYYY-MM-DD&to=YYYY-MM-DD
 ========================================================== */
 
+
+
+
 export const downloadStationReport = async (req, res) => {
   try {
     const { stationId } = req.params;
 
+    // ----------------------------------
+    // 1. VALIDATE STATION ID
+    // ----------------------------------
+
     if (!isValidId(stationId)) {
       return getError(res, "Invalid police station ID", 400);
     }
+
+    // ----------------------------------
+    // 2. VALIDATE DATE RANGE
+    // ----------------------------------
 
     const range = getOptionalReportRange(req.query);
 
@@ -1311,8 +1355,15 @@ export const downloadStationReport = async (req, res) => {
       return getError(res, range.error, 400);
     }
 
+    // ----------------------------------
+    // 3. FETCH POLICE STATION
+    // ----------------------------------
+
     const [stations] = await db.query(
-      `SELECT id, station_name, district
+      `SELECT
+          id,
+          station_name,
+          district
        FROM police_stations
        WHERE id = ?
        LIMIT 1`,
@@ -1325,18 +1376,23 @@ export const downloadStationReport = async (req, res) => {
 
     const station = stations[0];
 
+    // ----------------------------------
+    // 4. FETCH OFFICERS WHO HAVE VISITS
+    // ----------------------------------
+
     let officerConditions = `o.police_station_id = ?`;
+
     const officerParams = [stationId];
 
-    // Only include officers who have visits matching the selected dates.
-    // With no dates, include officers who have at least one visit ever.
     let existsConditions = `v.${VISIT_OFFICER_COL} = o.id`;
 
+    // Apply FROM date only when provided
     if (range.from) {
       existsConditions += ` AND v.${VISIT_TIME_COL} >= ?`;
       officerParams.push(range.start);
     }
 
+    // Apply TO date only when provided
     if (range.to) {
       existsConditions += ` AND v.${VISIT_TIME_COL} < DATE_ADD(?, INTERVAL 1 DAY)`;
       officerParams.push(range.to);
@@ -1352,26 +1408,35 @@ export const downloadStationReport = async (req, res) => {
 
     const [officers] = await db.query(
       `SELECT
-         o.id,
-         o.name,
-         o.phone_number
+          o.id,
+          o.name,
+          o.phone_number
        FROM police_station_officers o
        WHERE ${officerConditions}
        ORDER BY o.name ASC, o.id ASC`,
       officerParams
     );
 
+    // ----------------------------------
+    // 5. FETCH ALL INDIVIDUAL VISIT RECORDS
+    // ----------------------------------
+
     let visits = [];
 
-    if (officers.length) {
+    if (officers.length > 0) {
       let visitConditions = `v.${VISIT_OFFICER_COL} IN (?)`;
-      const visitParams = [officers.map((o) => o.id)];
 
+      const visitParams = [
+        officers.map((officer) => officer.id),
+      ];
+
+      // Apply FROM date only when provided
       if (range.from) {
         visitConditions += ` AND v.${VISIT_TIME_COL} >= ?`;
         visitParams.push(range.start);
       }
 
+      // Apply TO date only when provided
       if (range.to) {
         visitConditions += ` AND v.${VISIT_TIME_COL} < DATE_ADD(?, INTERVAL 1 DAY)`;
         visitParams.push(range.to);
@@ -1379,39 +1444,48 @@ export const downloadStationReport = async (req, res) => {
 
       [visits] = await db.query(
         `SELECT
-           v.${VISIT_OFFICER_COL} AS officer_id,
-           v.${VISIT_TIME_COL} AS visited_at,
-           v.latitude,
-           v.longitude,
-           q.${QR_NAME_COL} AS location_name
+            v.${VISIT_OFFICER_COL} AS officer_id,
+
+            v.${VISIT_TIME_COL} AS visited_at,
+
+            v.latitude,
+            v.longitude,
+
+            q.${QR_NAME_COL} AS location_name
+
          FROM ${VISIT_TABLE} v
-         LEFT JOIN ${QR_TABLE} q ON q.id = v.${VISIT_QR_COL}
+
+         LEFT JOIN ${QR_TABLE} q
+            ON q.id = v.${VISIT_QR_COL}
+
          WHERE ${visitConditions}
-         ORDER BY v.${VISIT_TIME_COL} ASC`,
+
+         ORDER BY
+            v.${VISIT_TIME_COL} ASC`,
         visitParams
       );
     }
 
-    const visitsByOfficer = new Map();
+    // ----------------------------------
+    // 6. CREATE OFFICER LOOKUP
+    // ----------------------------------
 
-    for (const visit of visits) {
-      if (!visitsByOfficer.has(visit.officer_id)) {
-        visitsByOfficer.set(visit.officer_id, []);
-      }
+    const officerMap = new Map(
+      officers.map((officer) => [
+        String(officer.id),
+        officer,
+      ])
+    );
 
-      visitsByOfficer.get(visit.officer_id).push(visit);
-    }
-
-    const officersVisited = officers.filter((o) =>
-      visitsByOfficer.has(o.id)
-    ).length;
+    // ----------------------------------
+    // 7. PREPARE EXCEL INFORMATION
+    // ----------------------------------
 
     const info = [
       ["Police Station", station.station_name],
       ["District", station.district || "N/A"],
     ];
 
-    // Do not show Period when no date filter was supplied.
     if (range.from || range.to) {
       info.push([
         "Period",
@@ -1419,115 +1493,98 @@ export const downloadStationReport = async (req, res) => {
           range.to ? toDateLabel(range.to) : "Present"
         }`,
       ]);
+    } else {
+      info.push(["Period", "All Records"]);
     }
 
-    info.push(
-      ["Total Officers", officers.length],
-      ["Officers Who Visited", officersVisited]
-    );
+    // ----------------------------------
+    // 8. CREATE WORKBOOK
+    // ----------------------------------
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Police Station Visit Verification System";
+
+    workbook.creator =
+      "Police Station Visit Verification System";
+
     workbook.created = new Date();
 
-  // Sheet 1: Officer Summary
+    // ----------------------------------
+    // 9. PREPARE INDIVIDUAL VISIT ROWS
+    // ----------------------------------
 
-addSheet(workbook, "Officer Summary", {
-  title: "Police Station Visit Report - Officer Summary",
-  info,
-  headers: [
-    "Sr No",
-    "Officer",
-    "Phone",
-    "Last Visit",
-  ],
-  widths: [8, 30, 16, 24],
-  rows: officers.map((officer, index) => {
-    const list = visitsByOfficer.get(officer.id) || [];
-    const last = list[list.length - 1];
+    const rows = visits.map((visit, index) => {
+      const officer = officerMap.get(
+        String(visit.officer_id)
+      );
 
-    return [
-      index + 1,
-      officer.name,
-      officer.phone_number || "N/A",
-      last
-        ? `${toDateLabel(toDateKey(last.visited_at))} ${toTimeLabel(
-            last.visited_at
-          )}`
-        : "No visits",
-    ];
-  }),
-});;
+      const dateKey = toDateKey(visit.visited_at);
 
-    const dailyRows = [];
+      return [
+        index + 1,
 
-    officers.forEach((officer) => {
-      const list = visitsByOfficer.get(officer.id) || [];
+        officer?.name || "N/A",
 
-      groupByDay(list).forEach(({ key, list: dayList }) => {
-        dailyRows.push([
-          dailyRows.length + 1,
-          officer.name,
-          toDateLabel(key),
-          toDayName(key),
-          dayList.length,
-          toTimeLabel(dayList[0].visited_at),
-          toTimeLabel(dayList[dayList.length - 1].visited_at),
-          uniqueLocations(dayList),
-        ]);
-      });
+        officer?.phone_number || "N/A",
+
+        toDateLabel(dateKey),
+
+        // toDayName(dateKey),
+
+        toTimeLabel(visit.visited_at),
+
+        visit.location_name || "N/A",
+
+        visit.latitude !== null &&
+        visit.latitude !== undefined
+          ? Number(visit.latitude)
+          : "",
+
+        visit.longitude !== null &&
+        visit.longitude !== undefined
+          ? Number(visit.longitude)
+          : "",
+      ];
     });
 
-    addSheet(workbook, "Daily Report", {
-      title: "Police Station Visit Report - Days Visited by Officer",
+    // ----------------------------------
+    // 10. ADD ONLY ONE EXCEL SHEET
+    // ----------------------------------
+
+    addSheet(workbook, "All Visits", {
+      title: "Police Station - All Officer Visits",
+
       info,
+
       headers: [
         "Sr No",
         "Officer",
-        "Date",
-        "Day",
-        "Visits",
-        "First Visit",
-        "Last Visit",
-        "Locations",
-      ],
-      widths: [8, 30, 14, 14, 10, 14, 14, 45],
-      rows: dailyRows,
-    });
-
-    const detailRows = [];
-
-    officers.forEach((officer) => {
-      (visitsByOfficer.get(officer.id) || []).forEach((v) => {
-        detailRows.push([
-          detailRows.length + 1,
-          officer.name,
-          toDateLabel(toDateKey(v.visited_at)),
-          toTimeLabel(v.visited_at),
-          v.location_name || "N/A",
-          v.latitude !== null ? Number(v.latitude) : "",
-          v.longitude !== null ? Number(v.longitude) : "",
-          "",
-        ]);
-      });
-    });
-
-    addSheet(workbook, "Visit Details", {
-      title: "Police Station Visit Report - Visit Details",
-      info,
-      headers: [
-        "Sr No",
-        "Officer",
-        "Date",
-        "Time",
+        "Phone",
+        "Visit Date",
+        // "Day",
+        "Visit Time",
         "Location",
         "Latitude",
         "Longitude",
-        "GPS Status",
       ],
-      widths: [8, 30, 14, 12, 40, 14, 14, 14],
-      rows: detailRows,
+
+      widths: [
+        8,
+        25,
+        16,
+        14,
+        
+        16,
+        35,
+        16,
+        16,
+      ],
+
+      rows,
     });
+
+    // ----------------------------------
+    // 11. DOWNLOAD EXCEL FILE
+    // ----------------------------------
 
     const dateSuffix = [
       range.from ? `from_${range.from}` : "",
@@ -1540,12 +1597,24 @@ addSheet(workbook, "Officer Summary", {
       dateSuffix ? `_${dateSuffix}` : ""
     }.xlsx`;
 
-    return await sendWorkbook(res, workbook, filename);
+    return await sendWorkbook(
+      res,
+      workbook,
+      filename
+    );
+
   } catch (error) {
     console.error("Download station report:", error);
 
-    if (res.headersSent) return res.end();
+    if (res.headersSent) {
+      return res.end();
+    }
 
-    return getError(res, "Failed to generate station report", 500);
+    return getError(
+      res,
+      "Failed to generate station report",
+      500
+    );
   }
 };
+

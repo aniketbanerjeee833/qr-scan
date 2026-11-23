@@ -20,6 +20,7 @@ import {
   downloadStationReport,
   downloadOfficerReport,
   getOfficerVisitReport,
+  getPoliceStationOptions,
 } from "../../controllers/admin/policeStation.controller.js";
 
 const router = express.Router();
@@ -29,6 +30,12 @@ router.use(userAuth, adminAuth);
 // Police stations
 router.post("/", createPoliceStation);
 router.get("/", getPoliceStations);
+router.get(
+  "/options",
+  getPoliceStationOptions
+);
+
+
 router.get("/:id", getPoliceStationById);
 router.put("/:id", updatePoliceStation);
 router.patch("/:id/status", updatePoliceStationStatus);

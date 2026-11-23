@@ -27,9 +27,8 @@ import {
 } from "@/redux/api/locationQRApi";
 
 import {
-  useGetPoliceStationsQuery,
+  useGetPoliceStationOptionsQuery,
 } from "@/redux/api/policeStationApi";
-
 import { toast } from "react-toastify";
 
 const emptyLocation = () => ({
@@ -46,15 +45,12 @@ export default function CreateLocationQR() {
 
   // Fetch police stations
   const {
-    data: stationResponse,
-    isLoading: isLoadingStations,
-    isFetching: isFetchingStations,
-  } = useGetPoliceStationsQuery({ limit: 100 });
+  data: stationResponse,
+  isLoading: isLoadingStations,
+  isFetching: isFetchingStations,
+} = useGetPoliceStationOptionsQuery();
 
-  const stations = (stationResponse?.data || []).filter(
-    (station) => Number(station.is_active) === 1
-  );
-
+const stations = stationResponse?.data ?? [];
   const [createLocationQR, { isLoading }] =
     useCreateLocationQRMutation();
 

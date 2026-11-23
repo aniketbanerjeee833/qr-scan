@@ -47,10 +47,10 @@ const allowedOrigins = [
   "http://192.168.0.103:5173",
 
   // Frontend ngrok URLs
-  "https://bc82-115-187-48-18.ngrok-free.app",
-  "https://e74e-115-187-48-18.ngrok-free.app",
+  "https://94c8-115-187-48-18.ngrok-free.app",
+  "https://c758-115-187-48-18.ngrok-free.app",
   
-"https://036c-115-187-48-18.ngrok-free.app"
+"https://e8d6-115-187-48-18.ngrok-free.app"
 ];
 
 const corsOptions = {
@@ -186,7 +186,7 @@ app.use(cookieParser());
 
 
 
-//22.474272015642285, 88.36488516878663 office
+
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -238,3 +238,4 @@ app.listen(PORT, "0.0.0.0", (err) => {
 
 
 
+//22.474272015642285, 88.36488516878663 office

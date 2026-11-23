@@ -1,12 +1,17 @@
+
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-// Saves a blob as a file download in the browser.
+// ========================================
+// EXCEL DOWNLOAD HELPERS
+// ========================================
+
 const saveBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -14,8 +19,6 @@ const saveBlob = (blob, filename) => {
   URL.revokeObjectURL(url);
 };
 
-// Success -> Blob (the Excel file).
-// Error   -> parsed JSON, so error.data.error works like every other endpoint.
 const excelResponseHandler = async (response) => {
   if (response.ok) return response.blob();
 
@@ -24,22 +27,48 @@ const excelResponseHandler = async (response) => {
   try {
     return JSON.parse(text);
   } catch {
-    return { error: text || "Failed to download report" };
+    return {
+      error: text || "Failed to download report",
+    };
   }
 };
+
+// ========================================
+// INFINITE QUERY HELPER
+// ========================================
+
+const getNextCursor = (lastPage) => {
+  if (!lastPage?.pagination?.hasMore) {
+    return undefined;
+  }
+
+  return lastPage.pagination.nextCursor ?? undefined;
+};
+
+// ========================================
+// API
+// ========================================
 
 export const policeStationApi = createApi({
   reducerPath: "policeStationApi",
 
   baseQuery: fetchBaseQuery({
-    //baseUrl: "http://localhost:4000/api/",
-    baseUrl: "https://036c-115-187-48-18.ngrok-free.app/api/",
+    baseUrl: "http://localhost:4000/api/",
+    // baseUrl: "https://YOUR-NGROK-URL.ngrok-free.app/api/",
+
     credentials: "include",
+
+    // Uncomment when using ngrok:
+    // prepareHeaders: (headers) => {
+    //   headers.set("ngrok-skip-browser-warning", "true");
+    //   return headers;
+    // },
   }),
 
   tagTypes: ["PoliceStation", "StationOfficer"],
 
   endpoints: (builder) => ({
+
     // ========================================
     // POLICE STATIONS
     // ========================================
@@ -50,23 +79,54 @@ export const policeStationApi = createApi({
         method: "POST",
         body,
       }),
-      invalidatesTags: [{ type: "PoliceStation", id: "LIST" }],
+
+      invalidatesTags: [
+        { type: "PoliceStation", id: "LIST" },
+      ],
     }),
 
-    getPoliceStations: builder.query({
-      query: (params = {}) => ({
+    // Infinite query: Police Stations
+    getPoliceStations: builder.infiniteQuery({
+      query: ({ queryArg, pageParam }) => ({
         url: "admin/police-stations",
         method: "GET",
-        params,
+
+        params: {
+          ...queryArg,
+          ...(pageParam ? { cursor: pageParam } : {}),
+        },
       }),
+
+      infiniteQueryOptions: {
+        initialPageParam: null,
+        getNextPageParam: getNextCursor,
+      },
+
       providesTags: (result) => [
         { type: "PoliceStation", id: "LIST" },
-        ...(Array.isArray(result?.data)
-          ? result.data.map((item) => ({
-              type: "PoliceStation",
-              id: item.id,
-            }))
-          : []),
+
+        ...(result?.pages ?? []).flatMap((page) =>
+          (page?.data ?? []).map((station) => ({
+            type: "PoliceStation",
+            id: station.id,
+          }))
+        ),
+      ],
+    }),
+        // Flat station list for dropdowns (not paginated, max 100)
+    getPoliceStationOptions: builder.query({
+  query: () => ({
+    url: "admin/police-stations/options",
+    method: "GET",
+  }),
+
+  providesTags: [{ type: "PoliceStation", id: "LIST" }],
+}),
+        getPoliceStationById: builder.query({
+      query: (id) => `admin/police-stations/${id}`,
+
+      providesTags: (result, error, id) => [
+        { type: "PoliceStation", id: Number(id) },
       ],
     }),
 
@@ -76,6 +136,7 @@ export const policeStationApi = createApi({
         method: "PUT",
         body,
       }),
+
       invalidatesTags: (result, error, { id }) => [
         { type: "PoliceStation", id },
         { type: "PoliceStation", id: "LIST" },
@@ -88,6 +149,7 @@ export const policeStationApi = createApi({
         method: "PATCH",
         body: { is_active },
       }),
+
       invalidatesTags: (result, error, { id }) => [
         { type: "PoliceStation", id },
         { type: "PoliceStation", id: "LIST" },
@@ -99,7 +161,10 @@ export const policeStationApi = createApi({
         url: `admin/police-stations/${id}`,
         method: "DELETE",
       }),
-      invalidatesTags: [{ type: "PoliceStation", id: "LIST" }],
+
+      invalidatesTags: [
+        { type: "PoliceStation", id: "LIST" },
+      ],
     }),
 
     // ========================================
@@ -112,26 +177,55 @@ export const policeStationApi = createApi({
         method: "POST",
         body,
       }),
+
       invalidatesTags: (result, error, { stationId }) => [
-        { type: "StationOfficer", id: `LIST-${stationId}` },
-        { type: "PoliceStation", id: "LIST" },
+        {
+          type: "StationOfficer",
+          id: `LIST-${stationId}`,
+        },
+        {
+          type: "PoliceStation",
+          id: "LIST",
+        },
       ],
     }),
 
-    getStationOfficers: builder.query({
-      query: ({ stationId, ...params }) => ({
-        url: `admin/police-stations/${stationId}/officers`,
-        method: "GET",
-        params,
-      }),
-      providesTags: (result, error, { stationId }) => [
-        { type: "StationOfficer", id: `LIST-${stationId}` },
-        ...(Array.isArray(result?.data)
-          ? result.data.map((item) => ({
-              type: "StationOfficer",
-              id: item.id,
-            }))
-          : []),
+    // Infinite query: Station Officers
+    getStationOfficers: builder.infiniteQuery({
+      query: ({ queryArg, pageParam }) => {
+        const { stationId, ...params } = queryArg;
+
+        return {
+          url: `admin/police-stations/${stationId}/officers`,
+          method: "GET",
+
+          params: {
+            ...params,
+            ...(pageParam ? { cursor: pageParam } : {}),
+          },
+        };
+      },
+
+      infiniteQueryOptions: {
+        initialPageParam: null,
+        getNextPageParam: getNextCursor,
+      },
+
+      // IMPORTANT:
+      // The third argument is the ORIGINAL query argument.
+      // It is NOT { queryArg, pageParam }.
+      providesTags: (result, error, arg) => [
+        {
+          type: "StationOfficer",
+          id: `LIST-${arg.stationId}`,
+        },
+
+        ...(result?.pages ?? []).flatMap((page) =>
+          (page?.data ?? []).map((officer) => ({
+            type: "StationOfficer",
+            id: officer.id,
+          }))
+        ),
       ],
     }),
 
@@ -141,10 +235,20 @@ export const policeStationApi = createApi({
         method: "PUT",
         body,
       }),
+
       invalidatesTags: (result, error, { stationId, officerId }) => [
-        { type: "StationOfficer", id: officerId },
-        { type: "StationOfficer", id: `LIST-${stationId}` },
-        { type: "PoliceStation", id: "LIST" },
+        {
+          type: "StationOfficer",
+          id: officerId,
+        },
+        {
+          type: "StationOfficer",
+          id: `LIST-${stationId}`,
+        },
+        {
+          type: "PoliceStation",
+          id: "LIST",
+        },
       ],
     }),
 
@@ -153,25 +257,41 @@ export const policeStationApi = createApi({
         url: `admin/police-stations/${stationId}/officers/${officerId}`,
         method: "DELETE",
       }),
+
       invalidatesTags: (result, error, { stationId, officerId }) => [
-        { type: "StationOfficer", id: officerId },
-        { type: "StationOfficer", id: `LIST-${stationId}` },
-        { type: "PoliceStation", id: "LIST" },
+        {
+          type: "StationOfficer",
+          id: officerId,
+        },
+        {
+          type: "StationOfficer",
+          id: `LIST-${stationId}`,
+        },
+        {
+          type: "PoliceStation",
+          id: "LIST",
+        },
       ],
     }),
-// Day-wise visit report of one officer (for the expandable table)
-getOfficerVisitReport: builder.query({
-  query: ({ stationId, officerId, from, to }) => ({
-    url: `admin/police-stations/${stationId}/officers/${officerId}/visit-report`,
-    method: "GET",
-    params: {
-      ...(from ? { from } : {}),
-      ...(to ? { to } : {}),
-    },
-  }),
-}),
+
     // ========================================
-    // EXCEL REPORTS (file download)
+    // OFFICER VISIT REPORT
+    // ========================================
+
+    getOfficerVisitReport: builder.query({
+      query: ({ stationId, officerId, from, to }) => ({
+        url: `admin/police-stations/${stationId}/officers/${officerId}/visit-report`,
+        method: "GET",
+
+        params: {
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        },
+      }),
+    }),
+
+    // ========================================
+    // EXCEL REPORTS
     // ========================================
 
     // All officers of one station
@@ -190,11 +310,18 @@ getOfficerVisitReport: builder.query({
           responseHandler: excelResponseHandler,
         });
 
-        if (result.error) return { error: result.error };
+        if (result.error) {
+          return { error: result.error };
+        }
 
-        saveBlob(result.data, filename || "station-report.xlsx");
+        saveBlob(
+          result.data,
+          filename || "station-report.xlsx"
+        );
 
-        return { data: { success: true } };
+        return {
+          data: { success: true },
+        };
       },
     }),
 
@@ -214,31 +341,47 @@ getOfficerVisitReport: builder.query({
           responseHandler: excelResponseHandler,
         });
 
-        if (result.error) return { error: result.error };
+        if (result.error) {
+          return { error: result.error };
+        }
 
-        saveBlob(result.data, filename || "officer-report.xlsx");
+        saveBlob(
+          result.data,
+          filename || "officer-report.xlsx"
+        );
 
-        return { data: { success: true } };
+        return {
+          data: { success: true },
+        };
       },
     }),
+
   }),
 });
 
+// ========================================
+// EXPORT HOOKS
+// ========================================
+
 export const {
-  // Police stations
+  // Police Stations
   useCreatePoliceStationMutation,
-  useGetPoliceStationsQuery,
+  useGetPoliceStationsInfiniteQuery,
+  useGetPoliceStationByIdQuery,
   useUpdatePoliceStationMutation,
   useUpdatePoliceStationStatusMutation,
   useDeletePoliceStationMutation,
 
-  // Police station officers
+  // Station Officers
   useCreateStationOfficerMutation,
-  useLazyGetStationOfficersQuery,
+  useGetStationOfficersInfiniteQuery,
+  useGetPoliceStationOptionsQuery,
   useUpdateStationOfficerMutation,
   useDeleteStationOfficerMutation,
+
+  // Reports
   useGetOfficerVisitReportQuery,
-  // Excel reports
   useDownloadStationReportMutation,
   useDownloadOfficerReportMutation,
+
 } = policeStationApi;

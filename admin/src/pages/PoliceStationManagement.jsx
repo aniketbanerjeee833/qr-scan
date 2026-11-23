@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import DeleteAlertModal from "@/components/Modal/DeleteAlertModal";
+import VirtualList from "@/components/common/VirtualList";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,11 +10,12 @@ import { Label } from "@/components/ui/label";
 
 import {
   useCreatePoliceStationMutation,
-  useGetPoliceStationsQuery,
+  useGetPoliceStationsInfiniteQuery,
+  useGetPoliceStationByIdQuery,
   useUpdatePoliceStationMutation,
   useDeletePoliceStationMutation,
   useCreateStationOfficerMutation,
-  useLazyGetStationOfficersQuery,
+  useGetStationOfficersInfiniteQuery,
   useUpdateStationOfficerMutation,
   useDeleteStationOfficerMutation,
   useGetOfficerVisitReportQuery,
@@ -37,7 +39,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 // Use the same base URL as your policeStationApi.
 const API_URL = "http://localhost:4000/api/";
@@ -115,9 +117,8 @@ function OfficerReportPanel({ stationId, officerId, from, to }) {
 
   const periodLabel =
     from || to
-      ? `${from ? formatInputDate(from) : "Beginning"} to ${
-          to ? formatInputDate(to) : "Today"
-        }`
+      ? `${from ? formatInputDate(from) : "Beginning"} to ${to ? formatInputDate(to) : "Today"
+      }`
       : "All dates";
 
   return (
@@ -139,10 +140,12 @@ function OfficerReportPanel({ stationId, officerId, from, to }) {
               "Failed to load visit report."}
           </p>
 
-          <Button variant="outline" size="sm"
+          <Button
+            variant="outline"
+            size="sm"
             type="button"
-            onClick={refetch}
-            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-100"
+            onClick={() => refetch()}
+            className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-100 hover:text-red-700"
           >
             Retry
           </Button>
@@ -203,41 +206,34 @@ function OfficerReportPanel({ stationId, officerId, from, to }) {
                     </tr>
                   </thead>
 
-                  <tbody>
-                    {days.map((day, index) => (
-                      <tr
-                        key={day.date}
-                        className="border-t border-gray-100 text-gray-700 hover:bg-gray-50"
-                      >
-                        <td className="px-3 py-2.5 text-gray-400">
-                          {index + 1}
-                        </td>
+                 <tbody>
+  {days.map((day, index) => (
+    <tr
+      key={`${day.date}-${index}`}
+      className="border-t border-gray-100 text-gray-700 hover:bg-gray-50"
+    >
+      <td className="px-3 py-2.5 text-gray-400">
+        {index + 1}
+      </td>
 
-                        <td className="whitespace-nowrap px-3 py-2.5 font-medium text-gray-800">
-                          {day.date_label}
-                        </td>
+      <td className="whitespace-nowrap px-3 py-2.5 font-medium text-gray-800">
+        {day.date_label}
+      </td>
 
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          {day.day}
-                        </td>
+      <td className="whitespace-nowrap px-3 py-2.5">
+        {day.day}
+      </td>
 
-                        {/* One visit: its time. Several: first - last (count) */}
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          {day.first_visit}
-                          {day.visits > 1 && (
-                            <span className="text-gray-400">
-                              {" "}
-                              – {day.last_visit} ({day.visits} visits)
-                            </span>
-                          )}
-                        </td>
+      <td className="whitespace-nowrap px-3 py-2.5 font-medium text-gray-700">
+        {day.visit_time}
+      </td>
 
-                        <td className="min-w-[160px] break-words px-3 py-2.5">
-                          {day.locations || "N/A"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+      <td className="min-w-[160px] break-words px-3 py-2.5">
+        {day.locations || "N/A"}
+      </td>
+    </tr>
+  ))}
+</tbody>
                 </table>
               </div>
             </div>
@@ -286,18 +282,37 @@ export default function PoliceStationManagement() {
   };
 
   // ========================================
-  // API
+  // STATIONS INFINITE QUERY
   // ========================================
 
   const {
-    data: stationResponse,
+    currentData: stationResponse,
     isLoading: isLoadingStations,
     isFetching: isFetchingStations,
+    isFetchingNextPage: isFetchingNextStationPage,
+    hasNextPage: stationHasMore,
+    fetchNextPage: fetchNextStationPage,
     refetch: refetchStations,
-  } = useGetPoliceStationsQuery({
-    limit: 100,
+  } = useGetPoliceStationsInfiniteQuery({
+    limit: PAGE_SIZE,
     ...(stationSearch ? { search: stationSearch } : {}),
   });
+
+  // RTK Query stores each cursor page. Flatten them for the VirtualList.
+  const stations = useMemo(
+    () => stationResponse?.pages?.flatMap((page) => page?.data ?? []) ?? [],
+    [stationResponse]
+  );
+
+  const loadMoreStations = () => {
+    if (stationHasMore && !isFetchingStations) {
+      fetchNextStationPage();
+    }
+  };
+
+  // ========================================
+  // MUTATIONS
+  // ========================================
 
   const [createPoliceStation, { isLoading: isCreatingStation }] =
     useCreatePoliceStationMutation();
@@ -311,15 +326,11 @@ export default function PoliceStationManagement() {
   const [createStationOfficer, { isLoading: isCreatingOfficer }] =
     useCreateStationOfficerMutation();
 
-  const [triggerOfficers] = useLazyGetStationOfficersQuery();
-
   const [updateStationOfficer, { isLoading: isUpdatingOfficer }] =
     useUpdateStationOfficerMutation();
 
   const [deleteStationOfficer, { isLoading: isDeletingOfficer }] =
     useDeleteStationOfficerMutation();
-
-  const stations = stationResponse?.data || [];
 
   // ========================================
   // SELECTED STATION
@@ -342,40 +353,41 @@ export default function PoliceStationManagement() {
     if (listedStation) setPinnedStation(listedStation);
   }, [listedStation]);
 
-  const isPinnedSelected =
+  const pinnedForSelected =
     pinnedStation &&
-    Number(pinnedStation.id) === Number(selectedStationId);
+      Number(pinnedStation.id) === Number(selectedStationId)
+      ? pinnedStation
+      : null;
+
+  // Not in the loaded pages (deep link / not yet loaded / filtered out):
+  // fetch it by id so the right panel still works.
+  const { currentData: fetchedStationResponse, isError: stationNotFound } =
+    useGetPoliceStationByIdQuery(selectedStationId, {
+      skip:
+        !selectedStationId ||
+        Boolean(listedStation) ||
+        Boolean(pinnedForSelected),
+    });
 
   const selectedStation =
-    listedStation || (isPinnedSelected ? pinnedStation : null);
+    listedStation ||
+    pinnedForSelected ||
+    fetchedStationResponse?.data ||
+    null;
 
+  // Nothing selected yet: pick the first station shown.
   useEffect(() => {
-    // Wait for the list; also wait while a new search/refetch is running,
-    // otherwise the stale list would wrongly change the selection.
-    if (isLoadingStations || isFetchingStations) return;
+    if (isLoadingStations || isFetchingStations || selectedStationId) return;
 
-    // Nothing selected yet: pick the first station shown.
-    if (!selectedStationId) {
-      if (stations.length) setSelectedStationId(stations[0].id);
-      return;
+    if (stations.length) {
+      setSelectedStationId(stations[0].id);
     }
+  }, [stations, selectedStationId, isLoadingStations, isFetchingStations]);
 
-    const isListed = stations.some(
-      (station) => Number(station.id) === Number(selectedStationId)
-    );
-
-    // While searching, a selected station that is filtered out is kept.
-    if (!isListed && !(stationSearch && isPinnedSelected)) {
-      setSelectedStationId(stations[0]?.id ?? null);
-    }
-  }, [
-    stations,
-    selectedStationId,
-    isLoadingStations,
-    isFetchingStations,
-    stationSearch,
-    isPinnedSelected,
-  ]);
+  // A stale/invalid stationId (for example from the URL): drop it.
+  useEffect(() => {
+    if (stationNotFound) setSelectedStationId(null);
+  }, [stationNotFound]);
 
   // ========================================
   // MODALS
@@ -393,8 +405,12 @@ export default function PoliceStationManagement() {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   // ========================================
-  // REPORT STATE
+  // OFFICER FILTERS + REPORT STATE
   // ========================================
+
+  const [officerSearch, setOfficerSearch] = useState(initialOfficerSearch);
+  const [debouncedOfficerSearch, setDebouncedOfficerSearch] =
+    useState(initialOfficerSearch);
 
   // Keep date filters optional and blank until the user selects them.
   const [reportFrom, setReportFrom] = useState(initialReportFrom);
@@ -405,6 +421,30 @@ export default function PoliceStationManagement() {
 
   // Officer whose visit report table is currently expanded
   const [expandedOfficerId, setExpandedOfficerId] = useState(null);
+
+  // Debounce so each keystroke does not create a new API query.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedOfficerSearch(officerSearch.trim());
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [officerSearch]);
+
+  // Reset officer search + dates (typed and applied values together)
+  const resetOfficerFilters = () => {
+    setOfficerSearch("");
+    setDebouncedOfficerSearch("");
+    setReportFrom("");
+    setReportTo("");
+  };
+
+  const handleSelectStation = (stationId) => {
+    if (Number(selectedStationId) === Number(stationId)) return;
+
+    setSelectedStationId(stationId);
+    resetOfficerFilters();
+  };
 
   // Collapse the open report whenever the station changes
   useEffect(() => {
@@ -418,18 +458,8 @@ export default function PoliceStationManagement() {
   };
 
   // ========================================
-  // OFFICER STATE + CURSOR PAGINATION
+  // URL SYNC
   // ========================================
-
-  const [officers, setOfficers] = useState([]);
-  const [officerSearch, setOfficerSearch] = useState(initialOfficerSearch);
-  const [officerLoading, setOfficerLoading] = useState(false);
-  const [officerHasMore, setOfficerHasMore] = useState(false);
-
-  const officerCursorRef = useRef(null);
-  const officerLoadingRef = useRef(false);
-  const officerHasMoreRef = useRef(true);
-  const officerRequestRef = useRef(0);
 
   // Keep the selected station and filters reflected in the browser URL.
   // Empty search/date values are removed rather than written as empty params.
@@ -482,124 +512,43 @@ export default function PoliceStationManagement() {
   ]);
 
   // ========================================
-  // LOAD OFFICERS
+  // OFFICERS INFINITE QUERY
   // ========================================
 
-  const loadOfficers = useCallback(
-    async (reset = false, searchTerm = officerSearch) => {
-      if (!selectedStationId) return;
-
-      if (officerLoadingRef.current && !reset) return;
-      if (!officerHasMoreRef.current && !reset) return;
-
-      const requestId = ++officerRequestRef.current;
-
-      officerLoadingRef.current = true;
-      setOfficerLoading(true);
-
-      if (reset) {
-        officerCursorRef.current = null;
-        officerHasMoreRef.current = true;
-        setOfficerHasMore(false);
-        setOfficers([]);
-      }
-
-      try {
-        const params = {
-          stationId: selectedStationId,
-          limit: PAGE_SIZE,
-        };
-
-        if (searchTerm.trim()) {
-          params.search = searchTerm.trim();
-        }
-
-        if (reportFrom) params.from = reportFrom;
-        if (reportTo) params.to = reportTo;
-
-        if (!reset && officerCursorRef.current) {
-          params.cursor = officerCursorRef.current;
-        }
-
-        const response = await triggerOfficers(params).unwrap();
-
-        if (requestId !== officerRequestRef.current) return;
-
-        const rows = Array.isArray(response?.data)
-          ? response.data
-          : [];
-
-        setOfficers((previous) => {
-          if (reset) return rows;
-
-          const existingIds = new Set(
-            previous.map((item) => item.id)
-          );
-
-          return [
-            ...previous,
-            ...rows.filter((item) => !existingIds.has(item.id)),
-          ];
-        });
-
-        const nextCursor =
-          response?.pagination?.nextCursor ?? null;
-
-        officerCursorRef.current = nextCursor;
-
-        const hasMore = Boolean(
-          response?.pagination?.hasMore ?? nextCursor
-        );
-
-        officerHasMoreRef.current = hasMore;
-        setOfficerHasMore(hasMore);
-      } catch (error) {
-        if (requestId !== officerRequestRef.current) return;
-
-        console.error("Fetch station officers:", error);
-
-        toast.error(
-          error?.data?.message || "Unable to fetch officers."
-        );
-      } finally {
-        if (requestId === officerRequestRef.current) {
-          officerLoadingRef.current = false;
-          setOfficerLoading(false);
-        }
-      }
+  // from/to are NOT sent here: the officers endpoint does not filter by date,
+  // and sending them would only refetch the list on every date change.
+  // The dates are used by the visit-report table and the Excel downloads.
+  const {
+    currentData: officerResponse,
+    isLoading: isLoadingOfficers,
+    isFetching: isFetchingOfficers,
+    isFetchingNextPage: isFetchingNextOfficerPage,
+    hasNextPage: officerHasMore,
+    fetchNextPage: fetchNextOfficerPage,
+    refetch: refetchOfficers,
+  } = useGetStationOfficersInfiniteQuery(
+    {
+      stationId: selectedStationId,
+      limit: PAGE_SIZE,
+      ...(debouncedOfficerSearch ? { search: debouncedOfficerSearch } : {}),
     },
-    [
-      selectedStationId,
-      officerSearch,
-      reportFrom,
-      reportTo,
-      triggerOfficers,
-    ]
+    {
+      skip: !selectedStationId,
+    }
   );
 
-  // ========================================
-  // LOAD WHEN STATION OR SEARCH CHANGES
-  // ========================================
+  const officers = useMemo(
+    () => officerResponse?.pages?.flatMap((page) => page?.data ?? []) ?? [],
+    [officerResponse]
+  );
 
-  useEffect(() => {
-    if (!selectedStationId) {
-      setOfficers([]);
-      setOfficerHasMore(false);
-      return;
+  const officerLoading = isLoadingOfficers || isFetchingOfficers;
+
+  const loadMoreOfficers = () => {
+    if (officerHasMore && !isFetchingOfficers) {
+      fetchNextOfficerPage();
     }
-
-    const delay = officerSearch.trim() ? 300 : 0;
-
-    const timer = setTimeout(() => {
-      loadOfficers(true, officerSearch);
-    }, delay);
-
-    return () => {
-      clearTimeout(timer);
-      officerRequestRef.current++;
-      officerLoadingRef.current = false;
-    };
-  }, [selectedStationId, officerSearch, loadOfficers]);
+  };
 
   // ========================================
   // DOWNLOAD EXCEL REPORTS
@@ -713,14 +662,12 @@ export default function PoliceStationManagement() {
           // Clear the search so the new station is visible in the list
           clearStationSearch();
           setSelectedStationId(response.data.id);
-          setOfficerSearch("");
-          setReportFrom("");
-          setReportTo("");
+          resetOfficerFilters();
         }
       }
 
+      // Lists refresh automatically through tag invalidation.
       closeStationModal();
-      await refetchStations();
     } catch (error) {
       console.error("Save police station:", error);
 
@@ -808,9 +755,8 @@ export default function PoliceStationManagement() {
         toast.success("Officer added successfully.");
       }
 
+      // Lists refresh automatically through tag invalidation.
       closeOfficerModal();
-      await loadOfficers(true);
-      await refetchStations();
     } catch (error) {
       console.error("Save officer:", error);
 
@@ -851,14 +797,10 @@ export default function PoliceStationManagement() {
         if (Number(selectedStationId) === Number(item.id)) {
           setSelectedStationId(null);
           setPinnedStation(null);
-          setOfficers([]);
-          setOfficerSearch("");
-          setReportFrom("");
-          setReportTo("");
+          resetOfficerFilters();
         }
 
         setDeleteTarget(null);
-        await refetchStations();
         return;
       }
 
@@ -874,16 +816,13 @@ export default function PoliceStationManagement() {
       }
 
       setDeleteTarget(null);
-
-      await loadOfficers(true);
-      await refetchStations();
     } catch (error) {
       console.error(`Delete ${type}:`, error);
       toast.error(
         error?.data?.message ||
-          (type === "station"
-            ? "Failed to delete police station."
-            : "Failed to delete officer.")
+        (type === "station"
+          ? "Failed to delete police station."
+          : "Failed to delete officer.")
       );
     }
   };
@@ -896,7 +835,7 @@ export default function PoliceStationManagement() {
     refetchStations();
 
     if (selectedStationId) {
-      loadOfficers(true);
+      refetchOfficers();
     }
   };
 
@@ -905,10 +844,10 @@ export default function PoliceStationManagement() {
   // ========================================
 
   return (
-    <div className="flex h-[calc(100vh-64px)] min-h-0 flex-col overflow-hidden bg-gray-50 p-3 md:p-5">
+    <div className="flex h-[calc(100dvh-64px)] min-h-0 flex-col overflow-hidden bg-gray-50 p-3 md:p-5">
       {/* PAGE HEADER */}
 
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-5 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-red-50 p-2.5 text-red-600">
             <Building2 size={23} />
@@ -925,18 +864,18 @@ export default function PoliceStationManagement() {
           </div>
         </div>
 
-        <Button variant="outline" size="sm"
+        <Button
+          variant="outline"
+          size="sm"
           type="button"
           onClick={handleRefresh}
           disabled={isFetchingStations || officerLoading}
-          className="flex items-center justify-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
         >
           <RefreshCw
             size={14}
             className={
-              isFetchingStations || officerLoading
-                ? "animate-spin"
-                : ""
+              isFetchingStations || officerLoading ? "animate-spin" : ""
             }
           />
           Refresh
@@ -945,7 +884,7 @@ export default function PoliceStationManagement() {
 
       {/* TWO COLUMN LAYOUT */}
 
-      <div className="grid flex-1 min-h-0 grid-cols-1 items-stretch gap-4 overflow-hidden lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(180px,0.75fr)_minmax(0,1.25fr)] items-stretch gap-4 overflow-hidden lg:grid-cols-[320px_minmax(0,1fr)] lg:grid-rows-1">
         {/* ========================================
             LEFT COLUMN - POLICE STATIONS
         ======================================== */}
@@ -959,12 +898,14 @@ export default function PoliceStationManagement() {
                 </h2>
 
                 <p className="mt-1 text-xs text-gray-500">
-                  {stations.length} station(s)
-                  {stationSearch ? " found" : ""}
+                  {stations.length}
+                  {stationHasMore ? "+" : ""} station(s)
                 </p>
               </div>
 
-              <Button variant="default" size="sm"
+              <Button
+                variant="default"
+                size="sm"
                 type="button"
                 onClick={openAddStation}
                 className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600"
@@ -985,12 +926,14 @@ export default function PoliceStationManagement() {
                 type="text"
                 value={stationSearchInput}
                 onChange={(e) => setStationSearchInput(e.target.value)}
-                placeholder="Search"
+                placeholder="Search station or district"
                 className="h-9 w-full rounded-lg border py-2 pl-9 pr-8 text-xs outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
               />
 
               {stationSearchInput ? (
-                <Button variant="ghost" size="icon-sm"
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   type="button"
                   onClick={clearStationSearch}
                   aria-label="Clear station search"
@@ -1007,111 +950,99 @@ export default function PoliceStationManagement() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 divide-y overflow-y-auto">
-            {isLoadingStations && (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {(isLoadingStations || isFetchingStations) &&
+              stations.length === 0 ? (
               <div className="flex justify-center py-10 text-gray-500">
                 <Loader2 className="animate-spin" size={22} />
               </div>
-            )}
+            ) : (
+              <VirtualList
+                items={stations}
+                getItemKey={(station) => station.id}
+                estimateSize={76}
+                overscan={5}
+                hasMore={Boolean(stationHasMore)}
+                isLoadingMore={isFetchingNextStationPage}
+                onEndReached={loadMoreStations}
+                endThreshold={5}
+                loadingText="Loading more police stations..."
+                emptyMessage={
+                  stationSearch
+                    ? "No police stations match your search."
+                    : "No police stations found. Add your first station."
+                }
+                className="h-full overscroll-contain"
+                renderItem={(station) => {
+                  const isSelected =
+                    Number(selectedStationId) === Number(station.id);
 
-            {!isLoadingStations && stations.length === 0 && (
-              <div className="px-4 py-10 text-center">
-                <Building2
-                  size={30}
-                  className="mx-auto mb-2 text-gray-300"
-                />
-
-                <p className="text-sm font-medium text-gray-600">
-                  {stationSearch
-                    ? "No police stations match your search"
-                    : "No police stations found"}
-                </p>
-
-                <p className="mt-1 text-xs text-gray-400">
-                  {stationSearch
-                    ? "Try a different station name or district."
-                    : "Add your first police station."}
-                </p>
-              </div>
-            )}
-
-            {stations.map((station) => {
-              const isSelected =
-                Number(selectedStationId) === Number(station.id);
-
-              return (
-                <Button variant="ghost" size="default"
-                  type="button"
-                  key={station.id}
-                  onClick={() => {
-                    if (Number(selectedStationId) !== Number(station.id)) {
-                      setSelectedStationId(station.id);
-                      setOfficerSearch("");
-                      setReportFrom("");
-                      setReportTo("");
-                    }
-                  }}
-                  className={`!h-auto min-h-[76px] w-full justify-start whitespace-normal border-l-4 p-4 text-left transition ${
-                    isSelected
-                      ? "border-red-500 bg-red-50"
-                      : "border-transparent hover:bg-gray-50"
-                  }`}
-                >
-                  <div className="flex w-full min-w-0 items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div
-                        className={`rounded-lg p-2 ${
-                          isSelected
-                            ? "bg-red-100 text-red-600"
-                            : "bg-gray-100 text-gray-500"
-                        }`}
+                  return (
+                    <div className="border-b border-gray-100">
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        onClick={() => handleSelectStation(station.id)}
+                        className={`!h-auto min-h-[76px] w-full justify-start whitespace-normal rounded-none border-l-4 p-4 text-left transition ${isSelected
+                            ? "border-red-500 bg-red-50 hover:bg-red-50"
+                            : "border-transparent hover:bg-gray-50"
+                          }`}
                       >
-                        <Building2 size={19} />
-                      </div>
+                        <div className="flex w-full min-w-0 items-start justify-between gap-2">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div
+                              className={`rounded-lg p-2 ${isSelected
+                                  ? "bg-red-100 text-red-600"
+                                  : "bg-gray-100 text-gray-500"
+                                }`}
+                            >
+                              <Building2 size={19} />
+                            </div>
 
-                      <div className="min-w-0 flex-1">
-                        <p
-                          title={station.station_name || "Police Station"}
-                          className="line-clamp-2 break-words text-sm font-semibold leading-5 text-gray-800"
-                        >
-                          {station.station_name}
-                        </p>
+                            <div className="min-w-0 flex-1">
+                              <p
+                                title={
+                                  station.station_name || "Police Station"
+                                }
+                                className="line-clamp-2 break-words text-sm font-semibold leading-5 text-gray-800"
+                              >
+                                {station.station_name}
+                              </p>
 
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] text-gray-600">
-                            {station.officer_count ??
-                              station.employee_count ??
-                              0}{" "}
-                            Officers
-                          </span>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] text-gray-600">
+                                  {station.officer_count ??
+                                    station.employee_count ??
+                                    0}{" "}
+                                  Officers
+                                </span>
 
-                          <span
-                            className={`rounded-full px-2 py-1 text-[10px] ${
-                              Number(station.is_active) === 1
-                                ? "bg-green-50 text-green-700"
-                                : "bg-gray-100 text-gray-500"
-                            }`}
-                          >
-                            {Number(station.is_active) === 1
-                              ? "Active"
-                              : "Inactive"}
-                          </span>
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[10px] ${Number(station.is_active) === 1
+                                      ? "bg-green-50 text-green-700"
+                                      : "bg-gray-100 text-gray-500"
+                                    }`}
+                                >
+                                  {Number(station.is_active) === 1
+                                    ? "Active"
+                                    : "Inactive"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <ChevronRight
+                            size={17}
+                            className={`mt-1 shrink-0 ${isSelected ? "text-red-500" : "text-gray-300"
+                              }`}
+                          />
                         </div>
-                      </div>
+                      </Button>
                     </div>
-
-                    <ChevronRight
-                      size={17}
-                      className={`mt-1 shrink-0 ${
-                        isSelected
-                          ? "text-red-500"
-                          : "text-gray-300"
-                      }`}
-                    />
-                  </div>
-                </Button>
-              );
-            })}
+                  );
+                }}
+              />
+            )}
           </div>
         </section>
 
@@ -1159,7 +1090,9 @@ export default function PoliceStationManagement() {
                   </div>
 
                   <div className="flex shrink-0 flex-nowrap gap-2">
-                    <Button variant="outline" size="sm"
+                    <Button
+                      variant="outline"
+                      size="sm"
                       type="button"
                       onClick={() => openEditStation(selectedStation)}
                       className="flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700"
@@ -1168,7 +1101,9 @@ export default function PoliceStationManagement() {
                       Edit Station
                     </Button>
 
-                    <Button variant="outline" size="sm"
+                    <Button
+                      variant="outline"
+                      size="sm"
                       type="button"
                       onClick={() => handleDeleteStation(selectedStation)}
                       className="flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
@@ -1194,11 +1129,13 @@ export default function PoliceStationManagement() {
                     </p>
                   </div>
 
-                  <Button variant="default" size="sm"
+                  <Button
+                    variant="default"
+                    size="sm"
                     type="button"
                     onClick={openAddOfficer}
                     disabled={Number(selectedStation.is_active) !== 1}
-                    className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-500 px-3 py-2 text-xs font-medium text-white hover:bg-red-600"
                   >
                     <Plus size={15} />
                     Add Officer
@@ -1207,7 +1144,10 @@ export default function PoliceStationManagement() {
 
                 <div className="grid grid-cols-[minmax(150px,1fr)_138px_138px_auto] items-end gap-2 overflow-x-auto">
                   <div className="min-w-[150px]">
-                    <Label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    <Label
+                      htmlFor="officer-search"
+                      className="mb-1 block text-[11px] font-medium text-gray-600"
+                    >
                       Search Officer
                     </Label>
                     <div className="relative">
@@ -1216,10 +1156,11 @@ export default function PoliceStationManagement() {
                         className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                       />
                       <Input
+                        id="officer-search"
                         type="text"
                         value={officerSearch}
                         onChange={(e) => setOfficerSearch(e.target.value)}
-                        placeholder="Search"
+                        placeholder="Search officers"
                         className="h-9 w-full rounded-lg border py-2 pl-9 pr-3 text-xs outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
                       />
                     </div>
@@ -1259,12 +1200,13 @@ export default function PoliceStationManagement() {
                     />
                   </div>
 
-                  <Button variant="outline" size="sm"
+                  <Button
+                    variant="default"
+                    size="sm"
                     type="button"
                     onClick={() => handleDownloadReport()}
                     disabled={downloadingKey !== null}
-                    className="flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap 
-                    rounded-lg bg-green-600 px-3 text-xs font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-green-600 px-3 text-xs font-medium text-white hover:bg-green-700"
                   >
                     {downloadingKey === "station" ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -1276,180 +1218,146 @@ export default function PoliceStationManagement() {
                 </div>
               </div>
 
-              {/* SCROLLABLE OFFICER RECORDS */}
+              {/* OFFICER RECORDS (VIRTUALIZED) */}
 
-              <div className="min-h-0 flex-1 divide-y overflow-y-auto">
-                {officers.map((officer) => {
-                  const isExpanded = expandedOfficerId === officer.id;
-
-                  return (
-                    <div key={officer.id}>
-                      {/* Clickable officer row */}
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={isExpanded}
-                        onClick={() => toggleOfficer(officer.id)}
-                        onKeyDown={(e) => {
-                          if (e.target !== e.currentTarget) return;
-
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            toggleOfficer(officer.id);
-                          }
-                        }}
-                        className={`flex cursor-pointer flex-col gap-3 p-4 transition hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 sm:flex-row sm:items-center sm:justify-between ${
-                          isExpanded ? "bg-gray-50" : ""
-                        }`}
-                      >
-                        {/* Officer details */}
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="rounded-full bg-gray-100 p-2.5 text-gray-500">
-                            <UserRound size={20} />
-                          </div>
-
-                          <div className="min-w-0">
-                            <h4 className="text-sm font-semibold text-gray-800">
-                              {officer.name}
-                            </h4>
-
-                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <Phone size={12} />
-                                {officer.phone_number || "N/A"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Actions and expand arrow */}
-                        <div className="flex shrink-0 items-center justify-between gap-3">
-                          {/* Action buttons: must NOT toggle the row */}
-                          <div
-                            className="flex flex-wrap gap-2"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button variant="outline" size="sm"
-                              type="button"
-                              onClick={() => handleDownloadReport(officer)}
-                              disabled={downloadingKey !== null}
-                              title="Download this officer's visit report (Excel)"
-                              className="flex items-center gap-1.5 rounded-lg border border-green-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {downloadingKey === `officer-${officer.id}` ? (
-                                <Loader2
-                                  size={14}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <FileSpreadsheet size={14} />
-                              )}
-                              Report
-                            </Button>
-
-                            <Button variant="outline" size="sm"
-                              type="button"
-                              onClick={() => openEditOfficer(officer)}
-                              className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                            >
-                              <Pencil size={14} />
-                              Edit
-                            </Button>
-
-                            <Button variant="outline" size="sm"
-                              type="button"
-                              onClick={() => handleDeleteOfficer(officer)}
-                              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
-                            >
-                              <Trash2 size={14} />
-                              Delete
-                            </Button>
-                          </div>
-
-                          {/* Arrow at far right: clicks bubble up to the row */}
-                          <ChevronDown
-                            size={18}
-                            className={`shrink-0 transition-transform duration-200 ${
-                              isExpanded
-                                ? "rotate-180 text-red-500"
-                                : "text-gray-400"
-                            }`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Expanded day-wise report table */}
-                      {isExpanded && (
-                        <OfficerReportPanel
-                          stationId={selectedStation.id}
-                          officerId={officer.id}
-                          from={reportFrom}
-                          to={reportTo}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Initial loading */}
-                {officerLoading && officers.length === 0 && (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {officerLoading && officers.length === 0 ? (
                   <div className="py-10 text-center text-sm text-gray-500">
                     <Loader2 className="mx-auto mb-2 animate-spin" />
                     Loading officers...
                   </div>
-                )}
+                ) : (
+                  <VirtualList
+                    items={officers}
+                    getItemKey={(officer) => officer.id}
+                    estimateSize={85}
+                    overscan={5}
+                    hasMore={Boolean(officerHasMore)}
+                    isLoadingMore={isFetchingNextOfficerPage}
+                    onEndReached={loadMoreOfficers}
+                    endThreshold={5}
+                    loadingText="Loading more officers..."
+                    emptyMessage="No officers found. Add an officer to this police station."
+                    className="h-full overscroll-contain"
+                    renderItem={(officer) => {
+                      const isExpanded = expandedOfficerId === officer.id;
 
-                {/* Empty state */}
-                {!officerLoading && officers.length === 0 && (
-                  <div className="py-12 text-center">
-                    <Users
-                      size={35}
-                      className="mx-auto mb-3 text-gray-300"
-                    />
+                      return (
+                        <div className="border-b border-gray-100">
+                          {/* Clickable officer row */}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={isExpanded}
+                            onClick={() => toggleOfficer(officer.id)}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget) return;
 
-                    <p className="text-sm font-medium text-gray-600">
-                      No officers found
-                    </p>
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleOfficer(officer.id);
+                              }
+                            }}
+                            className={`flex cursor-pointer flex-col gap-3 p-4 transition hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 sm:flex-row sm:items-center sm:justify-between ${isExpanded ? "bg-gray-50" : ""
+                              }`}
+                          >
+                            {/* Officer details */}
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="rounded-full bg-gray-100 p-2.5 text-gray-500">
+                                <UserRound size={20} />
+                              </div>
 
-                    <p className="mt-1 text-xs text-gray-400">
-                      Add an officer to this police station.
-                    </p>
-                  </div>
-                )}
+                              <div className="min-w-0">
+                                <h4 className="text-sm font-semibold text-gray-800">
+                                  {officer.name}
+                                </h4>
 
-                {/* Loading more officers */}
-                {officerLoading && officers.length > 0 && (
-                  <div className="py-4 text-center text-xs text-gray-500">
-                    <Loader2
-                      size={16}
-                      className="mr-2 inline animate-spin"
-                    />
-                    Loading more officers...
-                  </div>
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
+                                  <span className="flex items-center gap-1">
+                                    <Phone size={12} />
+                                    {officer.phone_number || "N/A"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Actions and expand arrow */}
+                            <div className="flex shrink-0 items-center justify-between gap-3">
+                              {/* Action buttons: must NOT toggle the row */}
+                              <div
+                                className="flex flex-wrap gap-2"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleDownloadReport(officer)}
+                                  disabled={downloadingKey !== null}
+                                  title="Download this officer's visit report (Excel)"
+                                  className="flex items-center gap-1.5 rounded-lg border border-green-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50 hover:text-green-800"
+                                >
+                                  {downloadingKey ===
+                                    `officer-${officer.id}` ? (
+                                    <Loader2
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                  ) : (
+                                    <FileSpreadsheet size={14} />
+                                  )}
+                                  Report
+                                </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => openEditOfficer(officer)}
+                                  className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                >
+                                  <Pencil size={14} />
+                                  Edit
+                                </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleDeleteOfficer(officer)}
+                                  className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
+                                >
+                                  <Trash2 size={14} />
+                                  Delete
+                                </Button>
+                              </div>
+
+                              {/* Arrow at far right: clicks bubble up to the row */}
+                              <ChevronDown
+                                size={18}
+                                className={`shrink-0 transition-transform duration-200 ${isExpanded
+                                    ? "rotate-180 text-red-500"
+                                    : "text-gray-400"
+                                  }`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Expanded day-wise report table */}
+                          {isExpanded && (
+                            <OfficerReportPanel
+                              stationId={selectedStation.id}
+                              officerId={officer.id}
+                              from={reportFrom}
+                              to={reportTo}
+                            />
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
                 )}
               </div>
-
-              {/* PAGINATION */}
-
-              {officers.length > 0 && (
-                <div className="shrink-0 border-t bg-gray-50 p-4">
-                  {officerHasMore ? (
-                    <Button variant="outline" size="sm"
-                      type="button"
-                      onClick={() => loadOfficers(false)}
-                      disabled={officerLoading}
-                      className="w-full rounded-lg border bg-white py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                    >
-                      {officerLoading ? "Loading..." : "Load More"}
-                    </Button>
-                  ) : (
-                    <></>
-                    // <p className="text-center text-xs text-gray-400">
-                    //   All officers loaded.
-                    // </p>
-                  )}
-                </div>
-              )}
             </>
           )}
         </section>
@@ -1475,9 +1383,12 @@ export default function PoliceStationManagement() {
                 </p>
               </div>
 
-              <Button variant="ghost" size="icon-sm"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 type="button"
                 onClick={closeStationModal}
+                aria-label="Close"
                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
                 <X size={20} />
@@ -1489,11 +1400,15 @@ export default function PoliceStationManagement() {
               className="space-y-4 p-4"
             >
               <div>
-                <Label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label
+                  htmlFor="station-name"
+                  className="mb-1 block text-xs font-medium text-gray-700"
+                >
                   Police Station Name *
                 </Label>
 
                 <Input
+                  id="station-name"
                   type="text"
                   value={stationForm.station_name}
                   maxLength={150}
@@ -1513,11 +1428,15 @@ export default function PoliceStationManagement() {
               </div>
 
               <div>
-                <Label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label
+                  htmlFor="station-district"
+                  className="mb-1 block text-xs font-medium text-gray-700"
+                >
                   District
                 </Label>
 
                 <Input
+                  id="station-district"
                   type="text"
                   value={stationForm.district}
                   onChange={(e) =>
@@ -1532,7 +1451,9 @@ export default function PoliceStationManagement() {
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-4">
-                <Button variant="ghost" size="icon-sm"
+                <Button
+                  variant="outline"
+                  size="sm"
                   type="button"
                   onClick={closeStationModal}
                   className="rounded-lg border px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
@@ -1540,10 +1461,12 @@ export default function PoliceStationManagement() {
                   Cancel
                 </Button>
 
-                <Button variant="default" size="sm"
+                <Button
+                  variant="default"
+                  size="sm"
                   type="submit"
                   disabled={isCreatingStation || isUpdatingStation}
-                  className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600"
                 >
                   {(isCreatingStation || isUpdatingStation) && (
                     <Loader2 size={15} className="animate-spin" />
@@ -1570,14 +1493,17 @@ export default function PoliceStationManagement() {
                   {editingOfficer ? "Edit Officer" : "Add Officer"}
                 </h3>
 
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-700">
                   {selectedStation?.station_name}
                 </p>
               </div>
 
-              <Button variant="ghost" size="icon-sm"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 type="button"
                 onClick={closeOfficerModal}
+                aria-label="Close"
                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
               >
                 <X size={20} />
@@ -1589,11 +1515,15 @@ export default function PoliceStationManagement() {
               className="space-y-4 p-4"
             >
               <div>
-                <Label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label
+                  htmlFor="officer-name"
+                  className="mb-1 block text-xs font-medium text-gray-700"
+                >
                   Officer Name *
                 </Label>
 
                 <Input
+                  id="officer-name"
                   type="text"
                   value={officerForm.name}
                   maxLength={150}
@@ -1613,11 +1543,15 @@ export default function PoliceStationManagement() {
               </div>
 
               <div>
-                <Label className="mb-1 block text-xs font-medium text-gray-700">
+                <Label
+                  htmlFor="officer-phone"
+                  className="mb-1 block text-xs font-medium text-gray-700"
+                >
                   Phone Number
                 </Label>
 
                 <Input
+                  id="officer-phone"
                   type="tel"
                   inputMode="numeric"
                   maxLength={10}
@@ -1636,7 +1570,9 @@ export default function PoliceStationManagement() {
               </div>
 
               <div className="flex justify-end gap-2 border-t pt-4">
-                <Button variant="outline" size="sm"
+                <Button
+                  variant="outline"
+                  size="sm"
                   type="button"
                   onClick={closeOfficerModal}
                   className="rounded-lg border px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
@@ -1644,10 +1580,12 @@ export default function PoliceStationManagement() {
                   Cancel
                 </Button>
 
-                <Button variant="default" size="sm"
+                <Button
+                  variant="default"
+                  size="sm"
                   type="submit"
                   disabled={isCreatingOfficer || isUpdatingOfficer}
-                  className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600"
                 >
                   {(isCreatingOfficer || isUpdatingOfficer) && (
                     <Loader2 size={15} className="animate-spin" />
@@ -1676,4 +1614,4 @@ export default function PoliceStationManagement() {
       />
     </div>
   );
-} 
+}

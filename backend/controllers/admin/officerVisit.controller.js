@@ -3,6 +3,7 @@ import db from "../../config/db.js";
 import getError from "../../utils/getError.js";
 import ExcelJS from "exceljs";
 import { addSheet, sendWorkbook, toDateKey, toDateLabel, toTimeLabel } from "../../utils/excelReportFunctions.js";
+
 export const getOfficerVisits = async (req, res) => {
   try {
     const {
@@ -12,33 +13,64 @@ export const getOfficerVisits = async (req, res) => {
       cursor,
     } = req.query;
 
-    // Validate and normalize limit
-    const requestedLimit = Number.parseInt(req.query.limit, 10) || 20;
-    const limit = Math.min(Math.max(requestedLimit, 1), 100);
+    // ----------------------------------
+    // VALIDATE LIMIT
+    // ----------------------------------
 
-    // Validate cursor
+    const requestedLimit =
+      Number.parseInt(req.query.limit, 10) || 20;
+
+    const limit = Math.min(
+      Math.max(requestedLimit, 1),
+      100
+    );
+
+    // ----------------------------------
+    // VALIDATE CURSOR
+    // ----------------------------------
+
     let cursorId = null;
 
     if (cursor !== undefined && cursor !== "") {
       cursorId = Number(cursor);
 
-      if (!Number.isSafeInteger(cursorId) || cursorId <= 0) {
-        return getError(res, "Invalid pagination cursor", 400);
+      if (
+        !Number.isSafeInteger(cursorId) ||
+        cursorId <= 0
+      ) {
+        return getError(
+          res,
+          "Invalid pagination cursor",
+          400
+        );
       }
     }
 
-    // Validate station ID
+    // ----------------------------------
+    // VALIDATE STATION ID
+    // ----------------------------------
+
     let stationId = null;
 
     if (station_id !== undefined && station_id !== "") {
       stationId = Number(station_id);
 
-      if (!Number.isInteger(stationId) || stationId <= 0) {
-        return getError(res, "Invalid station ID", 400);
+      if (
+        !Number.isInteger(stationId) ||
+        stationId <= 0
+      ) {
+        return getError(
+          res,
+          "Invalid station ID",
+          400
+        );
       }
     }
 
-    // Validate single visit date (YYYY-MM-DD)
+    // ----------------------------------
+    // VALIDATE VISIT DATE
+    // ----------------------------------
+
     const isValidDate = (date) => {
       if (!date) return true;
 
@@ -46,7 +78,9 @@ export const getOfficerVisits = async (req, res) => {
         return false;
       }
 
-      const parsed = new Date(`${date}T00:00:00.000Z`);
+      const parsed = new Date(
+        `${date}T00:00:00.000Z`
+      );
 
       return (
         !Number.isNaN(parsed.getTime()) &&
@@ -62,11 +96,14 @@ export const getOfficerVisits = async (req, res) => {
       );
     }
 
-    // Build dynamic filters
+    // ----------------------------------
+    // BUILD FILTERS
+    // ----------------------------------
+
     const conditions = [];
     const values = [];
 
-    // Search station name, district, or location name
+    // Search station, district or location
     if (search.trim()) {
       const searchValue = `%${search.trim()}%`;
 
@@ -87,16 +124,25 @@ export const getOfficerVisits = async (req, res) => {
 
     // Station filter
     if (stationId !== null) {
-      conditions.push("ov.police_station_id = ?");
+      conditions.push(
+        "ov.police_station_id = ?"
+      );
+
       values.push(stationId);
     }
 
-    // Exact calendar-day filter
+    // Exact date filter
     if (visit_date) {
-      conditions.push("ov.visited_at >= ?");
+      conditions.push(
+        "ov.visited_at >= ?"
+      );
+
       values.push(`${visit_date} 00:00:00`);
 
-      conditions.push("ov.visited_at < DATE_ADD(?, INTERVAL 1 DAY)");
+      conditions.push(`
+        ov.visited_at < DATE_ADD(?, INTERVAL 1 DAY)
+      `);
+
       values.push(`${visit_date} 00:00:00`);
     }
 
@@ -110,49 +156,65 @@ export const getOfficerVisits = async (req, res) => {
       ? `WHERE ${conditions.join(" AND ")}`
       : "";
 
-    // Fetch one extra row to determine hasMore
+    // ----------------------------------
+    // FETCH INDIVIDUAL VISIT RECORDS
+    // ----------------------------------
+
     const [rows] = await db.query(
-  `
-    SELECT
-      ov.id,
-      ov.location_qr_id,
-      ov.police_station_id,
-      ov.officer_id,
-      ov.image,
-      ov.latitude,
-      ov.longitude,
-      ov.visited_at,
+      `
+        SELECT
+          ov.id,
+          ov.location_qr_id,
+          ov.police_station_id,
+          ov.officer_id,
+          ov.image,
+          ov.latitude,
+          ov.longitude,
+          ov.visited_at,
 
-      q.location_name,
-      q.qr_code,
+          DATE_FORMAT(
+            ov.visited_at,
+            '%h:%i %p'
+          ) AS visit_time,
 
-      p.station_name,
-      p.district,
+          DATE_FORMAT(
+            ov.visited_at,
+            '%Y-%m-%d'
+          ) AS visit_date,
 
-      o.name AS officer_name,
-      o.phone_number AS officer_phone
+          q.location_name,
+          q.qr_code,
 
-    FROM officer_visits ov
+          p.station_name,
+          p.district,
 
-    LEFT JOIN location_qrs q
-      ON q.id = ov.location_qr_id
+          o.name AS officer_name,
+          o.phone_number AS officer_phone
 
-    LEFT JOIN police_stations p
-      ON p.id = ov.police_station_id
+        FROM officer_visits ov
 
-    LEFT JOIN police_station_officers o
-      ON o.id = ov.officer_id
+        LEFT JOIN location_qrs q
+          ON q.id = ov.location_qr_id
 
-    ${whereClause}
+        LEFT JOIN police_stations p
+          ON p.id = ov.police_station_id
 
-    ORDER BY ov.id DESC
+        LEFT JOIN police_station_officers o
+          ON o.id = ov.officer_id
 
-    LIMIT ?
-  `,
-  [...values, limit + 1]
-);
+        ${whereClause}
 
-    // Pagination details
+        ORDER BY ov.visited_at DESC, ov.id DESC
+
+        LIMIT ?
+      `,
+      [...values, limit + 1]
+    );
+
+    // ----------------------------------
+    // PAGINATION
+    // ----------------------------------
+
     const hasMore = rows.length > limit;
 
     const visits = hasMore
@@ -164,21 +226,37 @@ export const getOfficerVisits = async (req, res) => {
         ? visits[visits.length - 1].id
         : null;
 
+    // ----------------------------------
+    // RESPONSE
+    // ----------------------------------
+
     return res.status(200).json({
       success: true,
       message: "Officer visits fetched successfully",
+
       data: visits,
+
       pagination: {
         limit,
         hasMore,
         nextCursor,
       },
     });
+
   } catch (error) {
-    console.error("Get officer visits:", error);
-    return getError(res, "Failed to fetch officer visits", 500);
+    console.error(
+      "Get officer visits:",
+      error
+    );
+
+    return getError(
+      res,
+      "Failed to fetch officer visits",
+      500
+    );
   }
 };
+
 const getTodayDate = () => {
   const today = new Date();
   const year = today.getFullYear();
@@ -399,3 +477,4 @@ export const downloadOfficerVisitsReport = async (req, res) => {
     );
   }
 };
+

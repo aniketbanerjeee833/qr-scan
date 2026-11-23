@@ -1,16 +1,15 @@
-
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 
 import {
-  useLazyGetAllLocationQRsQuery,
+  useGetAllLocationQRsInfiniteQuery,
   useUpdateLocationQRMutation,
   useRegenerateLocationQRMutation,
   useDeleteLocationQRMutation,
 } from "@/redux/api/locationQRApi";
 
-import { useGetPoliceStationsQuery } from "@/redux/api/policeStationApi";
+import { useGetPoliceStationOptionsQuery } from "@/redux/api/policeStationApi";
 
 import {
   MapPin,
@@ -25,7 +24,6 @@ import {
   RotateCw,
   Plus,
   Trash2,
-  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -41,12 +39,15 @@ import {
 } from "@/components/ui/select";
 
 import DeleteAlertModal from "@/components/Modal/DeleteAlertModal";
+import VirtualList from "@/components/common/VirtualList";
+import { downloadLocationQR } from "@/utils/downloadLocationQr";
 
 const PAGE_SIZE = 10;
 
 // const API_ORIGIN = "http://192.168.29.2:4000";
-//const API_ORIGIN = "http://192.168.0.103:4000";
-const API_ORIGIN="https://036c-115-187-48-18.ngrok-free.app:4000"
+const API_ORIGIN = "http://192.168.0.103:4000";
+//const API_ORIGIN="https://448f-115-187-48-18.ngrok-free.app"
+
 const getImageUrl = (imagePath) => {
   if (!imagePath) return "";
 
@@ -55,6 +56,55 @@ const getImageUrl = (imagePath) => {
 
 export default function LocationQRManagement() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ============================================
+  // FILTERS
+  // ============================================
+
+  // Typed text updates instantly; the debounced text is what is sent to
+  // the API and written to the URL.
+  const [search, setSearch] = useState(
+    () => searchParams.get("search") || ""
+  );
+  const [debouncedSearch, setDebouncedSearch] = useState(
+    () => searchParams.get("search")?.trim() || ""
+  );
+
+  const [selectedStationId, setSelectedStationId] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reflect the applied search in the URL
+  useEffect(() => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+
+        if (debouncedSearch) {
+          next.set("search", debouncedSearch);
+        } else {
+          next.delete("search");
+        }
+
+        return next;
+      },
+      { replace: true }
+    );
+  }, [debouncedSearch, setSearchParams]);
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setSelectedStationId("");
+  };
+
   // ============================================
   // API
   // ============================================
@@ -65,41 +115,52 @@ export default function LocationQRManagement() {
   const [regenerateLocationQR, { isLoading: isRegenerating }] =
     useRegenerateLocationQRMutation();
 
-  const [triggerQRs] = useLazyGetAllLocationQRsQuery();
-
   const [deleteLocationQR, { isLoading: isDeleting }] =
     useDeleteLocationQRMutation();
 
-  const {
-    data: stationResponse,
-    isLoading: isLoadingStations,
-  } = useGetPoliceStationsQuery({ limit: 100 });
+  // Flat station list for the two dropdowns
+  const { data: stationResponse, isLoading: isLoadingStations } =
+    useGetPoliceStationOptionsQuery();
 
   const stations = stationResponse?.data || [];
 
   // ============================================
-  // QR LIST STATE
+  // QR LIST (INFINITE QUERY)
   // ============================================
 
-  const [qrRecords, setQrRecords] = useState([]);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(true);
+  const {
+    currentData: qrResponse,
+    isLoading: isLoadingQRs,
+    isFetching: isFetchingQRs,
+    isFetchingNextPage: isFetchingNextQRPage,
+    hasNextPage: qrHasMore,
+    fetchNextPage: fetchNextQRPage,
+    refetch: refetchQRs,
+  } = useGetAllLocationQRsInfiniteQuery({
+    limit: PAGE_SIZE,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(selectedStationId ? { station_id: selectedStationId } : {}),
+  });
+
+  // Flatten the cursor pages for the VirtualList
+  const qrRecords = useMemo(
+    () => qrResponse?.pages?.flatMap((page) => page?.data ?? []) ?? [],
+    [qrResponse]
+  );
+
+  const loadMoreQRs = () => {
+    if (qrHasMore && !isFetchingQRs) {
+      fetchNextQRPage();
+    }
+  };
+
+  // ============================================
+  // MODAL STATE
+  // ============================================
 
   const [selectedQR, setSelectedQR] = useState(null);
   const [editingQR, setEditingQR] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const [search, setSearch] = useState(
-    () => searchParams.get("search") || ""
-  );
-
-  const [selectedStationId, setSelectedStationId] = useState("");
-
-  // ============================================
-  // EDIT FORM
-  // ============================================
 
   const [editForm, setEditForm] = useState({
     location_name: "",
@@ -108,116 +169,6 @@ export default function LocationQRManagement() {
     is_active: 1,
     police_station_id: "",
   });
-
-  // ============================================
-  // PAGINATION REFS
-  // ============================================
-
-  const cursorRef = useRef(null);
-  const loadingRef = useRef(false);
-  const hasMoreRef = useRef(true);
-  const requestIdRef = useRef(0);
-
-  // ============================================
-  // LOAD QR PAGE
-  // ============================================
-
-  const loadQRPage = useCallback(
-    async (reset = false, searchTerm = search) => {
-      if (loadingRef.current && !reset) return;
-      if (!hasMoreRef.current && !reset) return;
-
-      const requestId = ++requestIdRef.current;
-
-      loadingRef.current = true;
-      setLoadingMore(true);
-
-      if (reset) {
-        cursorRef.current = null;
-        hasMoreRef.current = true;
-        setHasMore(true);
-        setQrRecords([]);
-      }
-
-      try {
-        const params = {
-          limit: PAGE_SIZE,
-        };
-
-        if (searchTerm.trim()) {
-          params.search = searchTerm.trim();
-        }
-
-        if (selectedStationId) {
-          params.station_id = selectedStationId;
-        }
-
-        if (!reset && cursorRef.current) {
-          params.cursor = cursorRef.current;
-        }
-
-        const response = await triggerQRs(params, false).unwrap();
-
-        if (requestId !== requestIdRef.current) return;
-
-        const rows = Array.isArray(response?.data)
-          ? response.data
-          : [];
-
-        setQrRecords((previous) => {
-          if (reset) return rows;
-
-          const existingIds = new Set(
-            previous.map((item) => item.id)
-          );
-
-          return [
-            ...previous,
-            ...rows.filter((item) => !existingIds.has(item.id)),
-          ];
-        });
-
-        const nextCursor =
-          response?.pagination?.nextCursor ?? null;
-
-        cursorRef.current = nextCursor;
-        hasMoreRef.current = Boolean(nextCursor);
-        setHasMore(Boolean(nextCursor));
-      } catch (error) {
-        if (requestId !== requestIdRef.current) return;
-
-        console.error("Fetch location QRs:", error);
-
-        toast.error(
-          error?.data?.message || "Unable to fetch QR records."
-        );
-      } finally {
-        if (requestId === requestIdRef.current) {
-          loadingRef.current = false;
-          setLoadingMore(false);
-        }
-      }
-    },
-    [search, selectedStationId, triggerQRs]
-  );
-
-  // ============================================
-  // INITIAL LOAD + SEARCH + STATION FILTER
-  // ============================================
-
-  useEffect(() => {
-    const delay = search.trim() ? 300 : 0;
-
-    const timer = setTimeout(() => {
-      loadQRPage(true, search);
-    }, delay);
-
-    return () => {
-      clearTimeout(timer);
-      requestIdRef.current++;
-      loadingRef.current = false;
-    };
-  }, [search, selectedStationId, loadQRPage]);
 
   // ============================================
   // EDIT HANDLERS
@@ -256,10 +207,7 @@ export default function LocationQRManagement() {
 
     if (!editingQR) return;
 
-    if (
-      editForm.latitude === "" ||
-      editForm.longitude === ""
-    ) {
+    if (editForm.latitude === "" || editForm.longitude === "") {
       toast.error("Latitude and longitude are required.");
       return;
     }
@@ -298,9 +246,8 @@ export default function LocationQRManagement() {
 
       setEditingQR(null);
 
+      // The list refreshes automatically through tag invalidation.
       toast.success("Location updated successfully.");
-
-      await loadQRPage(true);
     } catch (error) {
       console.error("Update QR:", error);
 
@@ -333,8 +280,6 @@ export default function LocationQRManagement() {
       if (response?.data) {
         setSelectedQR(response.data);
       }
-
-      await loadQRPage(true);
     } catch (error) {
       console.error("Regenerate QR:", error);
 
@@ -348,45 +293,79 @@ export default function LocationQRManagement() {
   // DOWNLOAD QR
   // ============================================
 
-  const handleDownloadQR = async (item) => {
-    if (!item.qr_image) {
-      toast.error("QR image is not available.");
-      return;
-    }
+  // const handleDownloadQR = async (item) => {
+  //   if (!item.qr_image) {
+  //     toast.error("QR image is not available.");
+  //     return;
+  //   }
 
-    let blobUrl;
+  //   let blobUrl;
 
-    try {
-      const response = await fetch(getImageUrl(item.qr_image));
+  //   try {
+  //     const response = await fetch(getImageUrl(item.qr_image), {
+  //       credentials: "include",
+  //       // headers: {
+  //       //   "ngrok-skip-browser-warning": "true",
+  //       // },
+  //     });
 
-      if (!response.ok) {
-        throw new Error("Unable to fetch QR image.");
-      }
+  //     if (!response.ok) {
+  //       throw new Error("Unable to fetch QR image.");
+  //     }
 
-      const blob = await response.blob();
-      blobUrl = window.URL.createObjectURL(blob);
+  //     const blob = await response.blob();
+  //     blobUrl = window.URL.createObjectURL(blob);
 
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = `${(item.location_name || "Location").replace(
-        /[^a-z0-9]/gi,
-        "_"
-      )}_QR.png`;
+  //     const link = document.createElement("a");
+  //     link.href = blobUrl;
+  //     link.download = `${(item.location_name || "Location").replace(
+  //       /[^a-z0-9]/gi,
+  //       "_"
+  //     )}_QR.png`;
 
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+  //     document.body.appendChild(link);
+  //     link.click();
+  //     link.remove();
 
-      toast.success("QR download started.");
-    } catch (error) {
-      console.error("Download QR:", error);
-      toast.error("Failed to download QR image. Check CORS settings.");
-    } finally {
-      if (blobUrl) {
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
-      }
-    }
-  };
+  //     toast.success("QR download started.");
+  //   } catch (error) {
+  //     console.error("Download QR:", error);
+  //     toast.error("Failed to download QR image. Check CORS settings.");
+  //   } finally {
+  //     if (blobUrl) {
+  //       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+  //     }
+  //   }
+  // };
+
+const handleDownloadQR = async (item) => {
+  if (!item.qr_image) {
+    toast.error("QR image is not available.");
+    return;
+  }
+
+  try {
+    await downloadLocationQR({
+      logoUrl: "/assets/images/kolkata-police-logo.jpg",
+      qrImageUrl: getImageUrl(item.qr_image),
+      locationName: item.location_name,
+      stationName: item.station_name,
+      website: "www.bidhannagarcitypolice.gov.in",
+      phone: "Control Room: 033-23358788/033-23410465",
+      fileName: `${(
+        item.location_name || "Location"
+      ).replace(/[^a-z0-9]/gi, "_")}_QR.png`,
+    });
+
+    toast.success("Complete location QR downloaded.");
+  } catch (error) {
+    console.error("Download QR:", error);
+    toast.error(error?.message || "Failed to download location QR.");
+  }
+};
+
+
+
 
   // ============================================
   // DELETE QR
@@ -414,8 +393,6 @@ export default function LocationQRManagement() {
       }
 
       setDeleteTarget(null);
-
-      await loadQRPage(true);
     } catch (error) {
       console.error("Delete location QR:", error);
 
@@ -426,39 +403,13 @@ export default function LocationQRManagement() {
   };
 
   // ============================================
-  // SEARCH HANDLER
-  // ============================================
-
-  const handleSearchChange = (value) => {
-    setSearch(value);
-
-    const params = new URLSearchParams(searchParams);
-
-    if (value.trim()) {
-      params.set("search", value);
-    } else {
-      params.delete("search");
-    }
-
-    setSearchParams(params, { replace: true });
-  };
-
-  const handleResetFilters = () => {
-    setSearch("");
-    setSelectedStationId("");
-    setSearchParams({}, { replace: true });
-  };
-
-  // ============================================
   // RENDER
   // ============================================
 
   return (
-    <div className="min-h-full space-y-5 bg-gray-50 p-3 md:p-5">
-
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-hidden bg-gray-50 p-3 md:p-5">
       {/* PAGE HEADING */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <div className="rounded-xl bg-red-50 p-2.5 text-red-600">
             <QrCode size={23} />
@@ -475,23 +426,21 @@ export default function LocationQRManagement() {
           </div>
         </div>
 
-  <Button
-  type="button"
-  variant="default"
-  onClick={() => navigate("/location-qrs/create")}
-  className="bg-red-500 text-white hover:bg-red-600"
->
-  <Plus size={17} />
-  Create QR
-</Button>
+        <Button
+          type="button"
+          variant="default"
+          onClick={() => navigate("/location-qrs/create")}
+          className="bg-red-500 text-white hover:bg-red-600"
+        >
+          <Plus size={17} />
+          Create QR
+        </Button>
       </div>
 
       {/* GENERATED QR LIST */}
-      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
         {/* LIST HEADER */}
-        <div className="border-b p-4">
-
+        <div className="shrink-0 border-b p-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="font-semibold text-gray-800">
@@ -499,7 +448,8 @@ export default function LocationQRManagement() {
               </h2>
 
               <p className="mt-1 text-xs text-gray-500">
-                Preview, edit, regenerate, and download QR codes.
+                Preview, edit, regenerate, and download QR codes. Scroll to
+                load more records.
               </p>
             </div>
 
@@ -507,286 +457,234 @@ export default function LocationQRManagement() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => loadQRPage(true)}
-              disabled={loadingMore}
+              onClick={() => refetchQRs()}
+              disabled={isFetchingQRs}
               className="text-xs text-gray-600"
             >
               <RefreshCw
                 size={14}
-                className={loadingMore ? "animate-spin" : ""}
+                className={isFetchingQRs ? "animate-spin" : ""}
               />
               Refresh
             </Button>
           </div>
 
           {/* FILTER + SEARCH */}
-         <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {/* POLICE STATION FILTER */}
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-xs font-medium text-gray-700">
+                Filter by Police Station
+              </Label>
 
-  {/* POLICE STATION FILTER */}
-  <div className="space-y-1.5 md:col-span-1">
-    <Label className="text-xs font-medium text-gray-700">
-      Filter by Police Station
-    </Label>
+              <Select
+                value={selectedStationId || "all"}
+                onValueChange={(value) =>
+                  setSelectedStationId(value === "all" ? "" : value)
+                }
+                disabled={isLoadingStations}
+              >
+                <SelectTrigger className="!h-10 w-full bg-white">
+                  <SelectValue placeholder="All Police Stations" />
+                </SelectTrigger>
 
-    <Select
-      value={selectedStationId || "all"}
-      onValueChange={(value) =>
-        setSelectedStationId(value === "all" ? "" : value)
-      }
-      disabled={isLoadingStations}
-    >
-      <SelectTrigger className="!h-10 w-full bg-white">
-        <SelectValue placeholder="All Police Stations" />
-      </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  side="bottom"
+                  sideOffset={0}
+                  align="start"
+                  className="max-h-64"
+                >
+                  <SelectItem value="all">All Police Stations</SelectItem>
 
-      <SelectContent
-        position="popper"
-        side="bottom"
-        sideOffset={0}
-        align="start"
-        className="max-h-64"
-      >
-        <SelectItem value="all">
-          All Police Stations
-        </SelectItem>
+                  {stations.map((station) => (
+                    <SelectItem
+                      key={station.id}
+                      value={String(station.id)}
+                    >
+                      {station.station_name}
+                      {station.district ? ` - ${station.district}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {stations.map((station) => (
-          <SelectItem
-            key={station.id}
-            value={String(station.id)}
-          >
-            {station.station_name}
-            {station.district ? ` - ${station.district}` : ""}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
+            {/* SEARCH + RESET */}
+            <div className="space-y-1.5 md:col-span-2">
+              <Label
+                htmlFor="qr-search"
+                className="text-xs font-medium text-gray-700"
+              >
+                Search
+              </Label>
 
-  {/* SEARCH + RESET */}
-  <div className="space-y-1.5 md:col-span-2">
-    <Label className="text-xs font-medium text-gray-700">
-      Search
-    </Label>
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    size={17}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
 
-    <div className="flex items-center gap-2">
+                  <Input
+                    id="qr-search"
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search"
+                    className="h-10 w-full pl-10"
+                  />
+                </div>
 
-      <div className="relative min-w-0 flex-1">
-        <Search
-          size={17}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-        />
-
-        <Input
-          type="text"
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search"
-          className="h-10 w-full pl-10"
-        />
-      </div>
-
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleResetFilters}
-        className="h-10 shrink-0 text-sm font-medium text-gray-600"
-      >
-        <RefreshCw size={15} />
-        Reset
-      </Button>
-
-    </div>
-  </div>
-</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleResetFilters}
+                  disabled={!search && !selectedStationId}
+                  className="h-10 shrink-0 text-sm font-medium text-gray-600"
+                >
+                  <RefreshCw size={15} />
+                  Reset
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* QR RECORDS */}
-        <div className="divide-y">
-
-          {qrRecords.map((item, index) => (
-            <div
-              key={item.id}
-              className="flex flex-col gap-3 p-4 transition hover:bg-gray-50 lg:flex-row lg:items-center lg:justify-between"
-            >
-
-              {/* SERIAL NUMBER */}
-              <div className="flex shrink-0 items-center gap-2 lg:w-16">
-                <span className="text-sm font-semibold tabular-nums text-gray-700">
-                  {index + 1}
-                </span>
-              </div>
-
-              {/* LOCATION DETAILS */}
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                <div className="shrink-0 rounded-lg bg-red-50 p-2.5 text-red-600">
-                  <MapPin size={20} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p
-                    title={item.station_name || "N/A"}
-                    className="break-words text-xs font-medium leading-5 text-gray-800"
-                  >
-                    Police Station: {item.station_name || "N/A"}
-                  </p>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <span className="flex items-center gap-1">
-                      <Navigation size={13} />
-                      {item.latitude}, {item.longitude}
-                    </span>
-
-                    <span
-                      className={`rounded-full px-2 py-1 ${
-                        item.is_active
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {item.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
-
-                  <p
-                    title={item.location_name || "N/A"}
-                    className="mt-1 break-words text-xs text-gray-700"
-                  >
-                    Location: {item.location_name || "N/A"}
-                  </p>
-                </div>
-              </div>
-
-              {/* ACTIONS */}
-              <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap">
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedQR(item)}
-                  className="text-xs text-gray-600"
-                >
-                  <QrCode size={15} />
-                  Preview
-                </Button>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => handleDownloadQR(item)}
-                  className="bg-red-500 text-xs text-white hover:bg-red-600"
-                >
-                  <Download size={15} />
-                  Download
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openEditModal(item)}
-                  className="border-blue-200 text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  <Pencil size={14} />
-                  Edit
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRegenerateQR(item)}
-                  disabled={isRegenerating}
-                  className="border-orange-200 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                >
-                  <RotateCw size={14} />
-                  Regenerate
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDeleteClick(item)}
-                  className="border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-                >
-                  <Trash2 size={14} />
-                  Delete
-                </Button>
-
-              </div>
-            </div>
-          ))}
-
-          {/* EMPTY STATE */}
-          {!loadingMore && qrRecords.length === 0 && (
-            <div className="py-12 text-center">
-              <QrCode
-                size={35}
-                className="mx-auto mb-3 text-gray-300"
-              />
-
-              <p className="text-sm font-medium text-gray-600">
-                No location QR codes found.
-              </p>
-
-              <p className="mt-1 text-xs text-gray-400">
-                Click Create Location QR to add your first location.
-              </p>
-
-              <Button
-                type="button"
-                variant="default"
-                onClick={() => navigate("/location-qrs/create")}
-                className="mt-4 bg-red-500 text-white hover:bg-red-600"
-              >
-                <Plus size={16} />
-                Create Location QR
-              </Button>
-            </div>
-          )}
-
-          {/* INITIAL LOADING */}
-          {loadingMore && qrRecords.length === 0 && (
+        {/* QR RECORDS - VIRTUALIZED + INFINITE SCROLL */}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {(isLoadingQRs || isFetchingQRs) && qrRecords.length === 0 ? (
             <div className="py-10 text-center text-sm text-gray-500">
               <Loader2 className="mx-auto mb-2 animate-spin" />
               Loading QR records...
             </div>
+          ) : (
+            <VirtualList
+              items={qrRecords}
+              getItemKey={(item) => item.id}
+              estimateSize={112}
+              overscan={5}
+              hasMore={Boolean(qrHasMore)}
+              isLoadingMore={isFetchingNextQRPage}
+              isBusy={isFetchingQRs}
+              onEndReached={loadMoreQRs}
+              endThreshold={5}
+              loadingText="Loading more QR records..."
+              emptyMessage="No location QR codes found."
+              className="h-full overscroll-contain"
+              renderItem={(item, index) => (
+                <div className="flex flex-col gap-3 border-b border-gray-100 p-4 transition hover:bg-gray-50 lg:flex-row lg:items-center lg:justify-between">
+                  {/* SERIAL NUMBER */}
+                  <div className="flex shrink-0 items-center gap-2 lg:w-16">
+                    <span className="text-sm font-semibold tabular-nums text-gray-700">
+                      {index + 1}
+                    </span>
+                  </div>
+
+                  {/* LOCATION DETAILS */}
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className="shrink-0 rounded-lg bg-red-50 p-2.5 text-red-600">
+                      <MapPin size={20} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p
+                        title={item.station_name || "N/A"}
+                        className="break-words text-xs font-medium leading-5 text-gray-800"
+                      >
+                        Police Station: {item.station_name || "N/A"}
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Navigation size={13} />
+                          {item.latitude}, {item.longitude}
+                        </span>
+
+                        <span
+                          className={`rounded-full px-2 py-1 ${
+                            Number(item.is_active) === 1
+                              ? "bg-green-50 text-green-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {Number(item.is_active) === 1
+                            ? "Active"
+                            : "Inactive"}
+                        </span>
+                      </div>
+
+                      <p
+                        title={item.location_name || "N/A"}
+                        className="mt-1 break-words text-xs text-gray-700"
+                      >
+                        Location: {item.location_name || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ACTIONS */}
+                  <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedQR(item)}
+                      className="text-xs text-gray-600"
+                    >
+                      <QrCode size={15} />
+                      Preview
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleDownloadQR(item)}
+                      className="bg-red-500 text-xs text-white hover:bg-red-600"
+                    >
+                      <Download size={15} />
+                      Download
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditModal(item)}
+                      className="border-blue-200 text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      <Pencil size={14} />
+                      Edit
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRegenerateQR(item)}
+                      disabled={isRegenerating}
+                      className="border-orange-200 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                    >
+                      <RotateCw size={14} />
+                      Regenerate
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDeleteClick(item)}
+                      className="border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 size={14} />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
+            />
           )}
         </div>
-
-        {/* FOOTER */}
-        {qrRecords.length > 0 && (
-          <div className="border-t bg-gray-50 p-4">
-
-            {hasMore && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => loadQRPage(false)}
-                disabled={loadingMore}
-                className="w-full bg-white text-sm font-medium text-gray-600 hover:bg-gray-100"
-              >
-                {loadingMore ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  "Load More"
-                )}
-              </Button>
-            )}
-
-            {!hasMore && (
-              <p className="text-center text-xs text-gray-400">
-                All QR records loaded.
-              </p>
-            )}
-
-          </div>
-        )}
       </div>
 
       {/* ============================================
@@ -795,9 +693,7 @@ export default function LocationQRManagement() {
 
       {editingQR && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-3">
-
           <div className="my-auto w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-
             {/* MODAL HEADER */}
             <div className="flex items-center justify-between border-b p-4">
               <div>
@@ -816,6 +712,7 @@ export default function LocationQRManagement() {
                 size="icon"
                 onClick={closeEditModal}
                 disabled={isUpdating}
+                aria-label="Close"
                 className="text-gray-500"
               >
                 <X size={20} />
@@ -823,11 +720,7 @@ export default function LocationQRManagement() {
             </div>
 
             {/* EDIT FORM */}
-            <form
-              onSubmit={handleUpdateQR}
-              className="space-y-4 p-4"
-            >
-
+            <form onSubmit={handleUpdateQR} className="space-y-4 p-4">
               {/* STATIC QR IMAGE PREVIEW */}
               <div className="rounded-lg border bg-gray-50 p-3">
                 <Label className="mb-2 block text-xs font-medium text-gray-700">
@@ -847,7 +740,8 @@ export default function LocationQRManagement() {
                 )}
 
                 <p className="mt-2 text-center text-[11px] text-gray-500">
-                  This QR image is fixed and cannot be changed from this form.
+                  This QR image is fixed and cannot be changed from this
+                  form.
                 </p>
               </div>
 
@@ -881,9 +775,7 @@ export default function LocationQRManagement() {
                         value={String(station.id)}
                       >
                         {station.station_name}
-                        {station.district
-                          ? ` - ${station.district}`
-                          : ""}
+                        {station.district ? ` - ${station.district}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -893,7 +785,7 @@ export default function LocationQRManagement() {
               {/* LOCATION NAME */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-gray-700">
-                  Location Name (Optional)
+                  Location Name
                 </Label>
 
                 <Input
@@ -908,7 +800,6 @@ export default function LocationQRManagement() {
 
               {/* COORDINATES */}
               <div className="grid grid-cols-2 gap-3">
-
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-gray-700">
                     Latitude *
@@ -942,7 +833,6 @@ export default function LocationQRManagement() {
                     className="h-10"
                   />
                 </div>
-
               </div>
 
               {/* STATUS */}
@@ -975,7 +865,6 @@ export default function LocationQRManagement() {
 
               {/* MODAL ACTIONS */}
               <div className="flex justify-end gap-2 border-t pt-4">
-
                 <Button
                   type="button"
                   variant="outline"
@@ -997,7 +886,6 @@ export default function LocationQRManagement() {
 
                   {isUpdating ? "Saving..." : "Save Changes"}
                 </Button>
-
               </div>
             </form>
           </div>
@@ -1010,22 +898,17 @@ export default function LocationQRManagement() {
 
       {selectedQR && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3">
-
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-
             {/* PREVIEW HEADER */}
             <div className="flex items-center justify-between border-b p-4">
-              <div>
-                <h3 className="font-semibold text-gray-800">
-                  QR Preview
-                </h3>
-              </div>
+              <h3 className="font-semibold text-gray-800">QR Preview</h3>
 
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={() => setSelectedQR(null)}
+                aria-label="Close"
                 className="text-gray-500"
               >
                 <X size={20} />
@@ -1034,7 +917,6 @@ export default function LocationQRManagement() {
 
             {/* QR IMAGE */}
             <div className="space-y-3 p-5 text-center">
-
               {selectedQR.qr_image ? (
                 <img
                   src={getImageUrl(selectedQR.qr_image)}
@@ -1052,7 +934,9 @@ export default function LocationQRManagement() {
               </h4>
 
               <p
-                title={selectedQR.station_name || "Police station not available"}
+                title={
+                  selectedQR.station_name || "Police station not available"
+                }
                 className="whitespace-normal break-words text-sm text-gray-500"
               >
                 {selectedQR.station_name || "N/A"}
@@ -1067,7 +951,6 @@ export default function LocationQRManagement() {
                 <Download size={17} />
                 Download QR PNG
               </Button>
-
             </div>
           </div>
         </div>
@@ -1081,7 +964,6 @@ export default function LocationQRManagement() {
         isDeleting={isDeleting}
         itemName={deleteTarget?.location_name || "N/A"}
       />
-
     </div>
   );
 }
