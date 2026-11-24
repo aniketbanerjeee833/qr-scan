@@ -32,7 +32,7 @@ export default function DeleteAlertModal({
       }}
     >
       <DialogContent
-        className="z-[200] max-w-sm"
+        className="z-[200] max-w-sm "
         onEscapeKeyDown={(e) => {
           if (isDeleting) e.preventDefault();
         }}
