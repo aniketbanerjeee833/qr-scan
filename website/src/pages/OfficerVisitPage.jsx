@@ -15,7 +15,7 @@ import { toast } from "react-toastify";
 // const API_URL = "http://192.168.29.2:4000/api/";
  //https://f781-115-187-48-18.ngrok-free.app -
 //const API_URL ="https://108f-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app/api/";
-const API_URL ="https://c758-115-187-48-18.ngrok-free.app/api/";
+const API_URL ="https://5edb-115-187-48-18.ngrok-free.app/api/";
 const MAX_DISTANCE = 100;
 const MAX_ACCURACY = 100;
 

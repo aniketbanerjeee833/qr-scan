@@ -47,10 +47,9 @@ const allowedOrigins = [
   "http://192.168.0.103:5173",
 
   // Frontend ngrok URLs
-  "https://94c8-115-187-48-18.ngrok-free.app",
-  "https://c758-115-187-48-18.ngrok-free.app",
+  "https://3a90-115-187-48-18.ngrok-free.app",
   
-"https://e8d6-115-187-48-18.ngrok-free.app"
+"https://5edb-115-187-48-18.ngrok-free.app"
 ];
 
 const corsOptions = {

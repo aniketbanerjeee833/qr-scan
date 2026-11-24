@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 
 import DeleteAlertModal from "@/components/Modal/DeleteAlertModal";
+import ConfirmActionModal from "@/components/Modal/ConfirmActionModal";
 import VirtualList from "@/components/common/VirtualList";
 import { downloadLocationQR } from "@/utils/downloadLocationQr";
 
@@ -161,6 +162,8 @@ export default function LocationQRManagement() {
   const [selectedQR, setSelectedQR] = useState(null);
   const [editingQR, setEditingQR] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [regenerateTarget, setRegenerateTarget] = useState(null);
+  const [downloadingQRId, setDownloadingQRId] = useState(null);
 
   const [editForm, setEditForm] = useState({
     location_name: "",
@@ -261,28 +264,30 @@ export default function LocationQRManagement() {
   // REGENERATE QR
   // ============================================
 
-  const handleRegenerateQR = async (item) => {
-    const confirmed = window.confirm(
-      `Regenerate QR for "${item.location_name || "Unnamed Location"}"?\n\n` +
-        "The old printed QR will stop working. " +
-        "You must download and print the new QR."
-    );
+  const handleRegenerateQR = (item) => {
+    setRegenerateTarget(item);
+  };
 
-    if (!confirmed) return;
+  const handleConfirmRegenerate = async () => {
+    if (!regenerateTarget) return;
 
     try {
-      const response = await regenerateLocationQR(item.id).unwrap();
+      const response = await regenerateLocationQR(regenerateTarget.id).unwrap();
 
       toast.success(
         response.message || "QR regenerated successfully."
       );
 
-      if (response?.data) {
-        setSelectedQR(response.data);
+      if (selectedQR?.id === regenerateTarget.id && response?.data) {
+        setSelectedQR((previous) => ({
+          ...previous,
+          ...response.data,
+        }));
       }
+
+      setRegenerateTarget(null);
     } catch (error) {
       console.error("Regenerate QR:", error);
-
       toast.error(
         error?.data?.message || "Failed to regenerate QR."
       );
@@ -293,78 +298,37 @@ export default function LocationQRManagement() {
   // DOWNLOAD QR
   // ============================================
 
-  // const handleDownloadQR = async (item) => {
-  //   if (!item.qr_image) {
-  //     toast.error("QR image is not available.");
-  //     return;
-  //   }
+  const handleDownloadQR = async (item) => {
+    if (!item?.qr_image) {
+      toast.error("QR image is not available.");
+      return;
+    }
 
-  //   let blobUrl;
+    if (downloadingQRId !== null) return;
 
-  //   try {
-  //     const response = await fetch(getImageUrl(item.qr_image), {
-  //       credentials: "include",
-  //       // headers: {
-  //       //   "ngrok-skip-browser-warning": "true",
-  //       // },
-  //     });
+    setDownloadingQRId(item.id);
 
-  //     if (!response.ok) {
-  //       throw new Error("Unable to fetch QR image.");
-  //     }
+    try {
+      await downloadLocationQR({
+        logoUrl: "/assets/images/kolkata-police-logo.jpg",
+        qrImageUrl: getImageUrl(item.qr_image),
+        locationName: item.location_name,
+        stationName: item.station_name,
+        website: "www.bidhannagarcitypolice.gov.in",
+        phone: "Control Room: 033-23358788/033-23410465",
+        fileName: `${(
+          item.location_name || "Location"
+        ).replace(/[^a-z0-9]/gi, "_")}_QR.png`,
+      });
 
-  //     const blob = await response.blob();
-  //     blobUrl = window.URL.createObjectURL(blob);
-
-  //     const link = document.createElement("a");
-  //     link.href = blobUrl;
-  //     link.download = `${(item.location_name || "Location").replace(
-  //       /[^a-z0-9]/gi,
-  //       "_"
-  //     )}_QR.png`;
-
-  //     document.body.appendChild(link);
-  //     link.click();
-  //     link.remove();
-
-  //     toast.success("QR download started.");
-  //   } catch (error) {
-  //     console.error("Download QR:", error);
-  //     toast.error("Failed to download QR image. Check CORS settings.");
-  //   } finally {
-  //     if (blobUrl) {
-  //       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
-  //     }
-  //   }
-  // };
-
-const handleDownloadQR = async (item) => {
-  if (!item.qr_image) {
-    toast.error("QR image is not available.");
-    return;
-  }
-
-  try {
-    await downloadLocationQR({
-      logoUrl: "/assets/images/kolkata-police-logo.jpg",
-      qrImageUrl: getImageUrl(item.qr_image),
-      locationName: item.location_name,
-      stationName: item.station_name,
-      website: "www.bidhannagarcitypolice.gov.in",
-      phone: "Control Room: 033-23358788/033-23410465",
-      fileName: `${(
-        item.location_name || "Location"
-      ).replace(/[^a-z0-9]/gi, "_")}_QR.png`,
-    });
-
-    toast.success("Complete location QR downloaded.");
-  } catch (error) {
-    console.error("Download QR:", error);
-    toast.error(error?.message || "Failed to download location QR.");
-  }
-};
-
-
+      toast.success("Complete location QR downloaded.");
+    } catch (error) {
+      console.error("Download QR:", error);
+      toast.error(error?.message || "Failed to download location QR.");
+    } finally {
+      setDownloadingQRId(null);
+    }
+  };
 
 
   // ============================================
@@ -640,10 +604,20 @@ const handleDownloadQR = async (item) => {
                       type="button"
                       size="sm"
                       onClick={() => handleDownloadQR(item)}
-                      className="bg-red-500 text-xs text-white hover:bg-red-600"
+                      disabled={downloadingQRId !== null}
+                      className="bg-red-500 text-xs text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <Download size={15} />
-                      Download
+                      {downloadingQRId === item.id ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          Downloading...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={15} />
+                          Download
+                        </>
+                      )}
                     </Button>
 
                     <Button
@@ -945,16 +919,41 @@ const handleDownloadQR = async (item) => {
               <Button
                 type="button"
                 onClick={() => handleDownloadQR(selectedQR)}
-                disabled={!selectedQR.qr_image}
-                className="h-11 w-full bg-red-500 text-sm font-medium text-white hover:bg-red-600"
+                disabled={!selectedQR.qr_image || downloadingQRId !== null}
+                className="h-11 w-full bg-red-500 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-60"
               >
-                <Download size={17} />
-                Download QR PNG
+                {downloadingQRId === selectedQR.id ? (
+                  <>
+                    <Loader2 size={17} className="animate-spin" />
+                    Downloading...
+                  </>
+                ) : (
+                  <>
+                    <Download size={17} />
+                    Download QR PNG
+                  </>
+                )}
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* REGENERATE CONFIRMATION */}
+      <ConfirmActionModal
+  open={Boolean(regenerateTarget)}
+  onClose={() => {
+    if (!isRegenerating) setRegenerateTarget(null);
+  }}
+  onConfirm={handleConfirmRegenerate}
+  isLoading={isRegenerating}
+  title="Regenerate QR Code?"
+  description={`Are you sure you want to regenerate the QR code for Location: ${
+    regenerateTarget?.location_name || "N/A"
+  }? The existing printed QR will stop working. You must download and print the new QR code.`}
+  confirmLabel="Regenerate QR"
+  cancelLabel="Cancel"
+/>
 
       {/* DELETE CONFIRMATION */}
       <DeleteAlertModal

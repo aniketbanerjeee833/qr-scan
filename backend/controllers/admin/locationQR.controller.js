@@ -13,7 +13,7 @@ import getError from "../../utils/getError.js";
 //const CLIENT_URL = "http://192.168.29.2:5173";
 // const CLIENT_URL =
 //   "https://5691-2405-201-8025-5070-d5b3-e77a-b736-9cf4.ngrok-free.app";
-const CLIENT_URL ="https://94c8-115-187-48-18.ngrok-free.app";
+const CLIENT_URL ="https://3a90-115-187-48-18.ngrok-free.app";
 // Temporary default police station
 // Later, this will come from the authenticated user.
 const DEFAULT_POLICE_STATION_ID = 1;
